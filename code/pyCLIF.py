@@ -925,7 +925,7 @@ med_unit_info = {
     },
     'vasopressin': {
         'required_unit': 'units/min',
-        'acceptable_units': ['units/min', 'units/hr', 'milliunits/min', 'milliunits/hr', 'milli-units/kg/hr',
+        'acceptable_units': ['units/min', 'units/hr', 'units/hour','milliunits/min', 'milliunits/hr', 'milli-units/kg/hr',
                              'milli-units/min', 'milli-units/hr','milli-units/kg/h','milliunits/kg/h',
                              'milli-units/kg/min', 'milliunits/kg/min' ],
     },
