@@ -60,3 +60,10 @@ package-lock.json
 CLAUDE.md
 todo.md
 dashboard_review.md
+
+.serena/
+check.ipynb
+docs/
+manuscript/
+memory_optimization_suggestions.md
+output_ucmc_0725/
