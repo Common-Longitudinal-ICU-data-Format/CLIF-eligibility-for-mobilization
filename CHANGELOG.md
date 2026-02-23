@@ -103,7 +103,7 @@ Initial implementation.
 1. Marimo migration 
 - Migrated all analysis notebooks from Jupyter (`.ipynb`) to **marimo** (`.py`).
 - New `run_pipeline.sh` (macOS/Linux) and `run_pipeline.bat` (Windows) using **uv** for dependency management.
-- Pipeline: `01_cohort_identification_marimo.py` → `02_mobilization_analysis_marimo.py` → `03_combined_analysis.R` → `sensitivity_forest_plots.R`.
+- Pipeline: `01_cohort_identification.py` → `02_mobilization_analysis.py` → `03_combined_analysis.R` → `sensitivity_forest_plots.R`.
 - Archived old Jupyter notebooks, `.py` scripts, and `run_project.sh`/`.bat`.
 
 2. Fill strategy overhaul

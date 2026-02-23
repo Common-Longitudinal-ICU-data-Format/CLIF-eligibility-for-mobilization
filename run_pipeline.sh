@@ -3,8 +3,8 @@
 #  run_pipeline.sh — Execute the full CLIF mobilization analysis pipeline
 #
 #  Steps:
-#    1. Python  01_cohort_identification_marimo.py   (cohort + STROBE)
-#    2. Python  02_mobilization_analysis_marimo.py   (criteria, tables, sensitivity)
+#    1. Python  01_cohort_identification.py   (cohort + STROBE)
+#    2. Python  02_mobilization_analysis.py   (criteria, tables, sensitivity)
 #    3. R       03_combined_analysis.R               (CIF, Fine-Gray, forest plots)
 #    4. R       sensitivity_forest_plots.R           (sensitivity forest plots)
 #
@@ -49,7 +49,7 @@ export PYTHONPATH="${PROJECT_ROOT}/code:${PYTHONPATH:-}"
 
 FAILED_STEPS=()
 STEP=0
-TOTAL=4  # 2 Python (marimo) + 2 R
+TOTAL=4  # 2 Python + 2 R
 
 run_step() {
   local name="$1"; shift
@@ -72,9 +72,9 @@ run_step() {
 # ── pipeline (cwd = code/ so relative paths work) ───────────────────────────
 cd "${PROJECT_ROOT}/code"
 
-# Python steps — marimo notebooks with app.run() entrypoint
-run_step "01 Cohort Identification"       uv run --project "${PROJECT_ROOT}" python 01_cohort_identification_marimo.py
-run_step "02 Mobilization Analysis"       uv run --project "${PROJECT_ROOT}" python 02_mobilization_analysis_marimo.py
+# Python steps
+run_step "01 Cohort Identification"       uv run --project "${PROJECT_ROOT}" python 01_cohort_identification.py
+run_step "02 Mobilization Analysis"       uv run --project "${PROJECT_ROOT}" python 02_mobilization_analysis.py
 
 # R steps
 if command -v Rscript >/dev/null 2>&1; then

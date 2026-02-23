@@ -63,8 +63,8 @@ Both scripts:
 
 | Step | Script | Language | Description |
 |------|--------|----------|-------------|
-| 1 | `01_cohort_identification_marimo.py` | Python | Cohort identification, STROBE diagram, hourly scaffold |
-| 2 | `02_mobilization_analysis_marimo.py` | Python | Eligibility criteria, TableOne, failure analysis, sensitivity |
+| 1 | `01_cohort_identification.py` | Python | Cohort identification, STROBE diagram, hourly scaffold |
+| 2 | `02_mobilization_analysis.py` | Python | Eligibility criteria, TableOne, failure analysis, sensitivity |
 | 3 | `03_combined_analysis.R` | R | CIF curves, Fine-Gray SHR, stacked sensitivity CIF/SHR |
 | 4 | `sensitivity_forest_plots.R` | R | Sensitivity forest plots |
 
@@ -73,13 +73,12 @@ Both scripts:
 
 ```
 ├── code/
-│   ├── 01_cohort_identification_marimo.py   # Step 1: Cohort + STROBE
-│   ├── 02_mobilization_analysis_marimo.py   # Step 2: Criteria + analysis
+│   ├── 01_cohort_identification.py   # Step 1: Cohort + STROBE
+│   ├── 02_mobilization_analysis.py   # Step 2: Criteria + analysis
 │   ├── 03_combined_analysis.R               # Step 3: CIF + Fine-Gray
 │   ├── sensitivity_forest_plots.R           # Step 4: Forest plots
 │   ├── pyCLIF.py                            # CLIF data loading utilities
-│   ├── sofa_score.py                        # SOFA score (1997 definition)
-│   └── waterfall.py                         # Eligibility logic
+│   └── sofa_score.py                        # SOFA score (1997 definition)
 ├── config/
 │   ├── config_template.json                 # Site config template
 │   └── outlier_config.json                  # Outlier thresholds
