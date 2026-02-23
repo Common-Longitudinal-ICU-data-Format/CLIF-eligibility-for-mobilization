@@ -68,8 +68,8 @@ if errorlevel 1 (
     call :log "Run manually: cd code && Rscript 03_combined_analysis.R && Rscript sensitivity_forest_plots.R"
     set /a FAILED_COUNT+=2
 ) else (
-    call :run_step "03 Combined R Analysis" Rscript 03_combined_analysis.R
-    call :run_step "04 Sensitivity Forest Plots" Rscript sensitivity_forest_plots.R
+    call :run_step "03 Combined R Analysis" Rscript --vanilla 03_combined_analysis.R
+    call :run_step "04 Sensitivity Forest Plots" Rscript --vanilla sensitivity_forest_plots.R
 )
 
 REM ── summary ──────────────────────────────────────────────────────────────────
@@ -81,6 +81,19 @@ if %FAILED_COUNT% equ 0 (
     call :log "All steps completed successfully."
 ) else (
     call :log "%FAILED_COUNT% step(s) failed. Check log for details."
+    call :log ""
+    call :log "── R Troubleshooting ──"
+    call :log "If you see 'renv/activate.R' errors, your .Rprofile is loading renv which this project does not use."
+    call :log "The --vanilla flag should bypass this, but if issues persist:"
+    call :log "  1. Temporarily rename your .Rprofile"
+    call :log "  2. Or run the R scripts manually from an R console:"
+    call :log ""
+    call :log "     setwd('%PROJECT_ROOT%\code')"
+    call :log "     install.packages(c('arrow', 'cmprsk', 'data.table', 'dplyr', 'ggplot2',"
+    call :log "                        'tidyverse', 'writexl', 'jsonlite', 'patchwork', 'tidyr'))"
+    call :log "     source('03_combined_analysis.R')"
+    call :log "     source('sensitivity_forest_plots.R')"
+    call :log ""
 )
 
 call :log ""

@@ -78,8 +78,8 @@ run_step "02 Mobilization Analysis"       uv run --project "${PROJECT_ROOT}" pyt
 
 # R steps
 if command -v Rscript >/dev/null 2>&1; then
-  run_step "03 Combined R Analysis"       Rscript 03_combined_analysis.R
-  run_step "04 Sensitivity Forest Plots"  Rscript sensitivity_forest_plots.R
+  run_step "03 Combined R Analysis"       Rscript --vanilla 03_combined_analysis.R
+  run_step "04 Sensitivity Forest Plots"  Rscript --vanilla sensitivity_forest_plots.R
 else
   log "${YELLOW}Rscript not found — skipping R analysis.${RESET}"
   log "${YELLOW}Run manually: cd code && Rscript 03_combined_analysis.R && Rscript sensitivity_forest_plots.R${RESET}"
@@ -99,6 +99,27 @@ else
   for s in "${FAILED_STEPS[@]}"; do
     log "${RED}  - ${s}${RESET}"
   done
+
+  # Check if any R steps failed
+  R_FAILED=0
+  for s in "${FAILED_STEPS[@]}"; do
+    case "$s" in *R*|*Forest*) R_FAILED=1 ;; esac
+  done
+  if [ $R_FAILED -eq 1 ]; then
+    log ""
+    log "${YELLOW}${BOLD}── R Troubleshooting ──${RESET}"
+    log "${YELLOW}If you see 'renv/activate.R' errors, your .Rprofile is loading renv which this project does not use.${RESET}"
+    log "${YELLOW}The --vanilla flag should bypass this, but if issues persist:${RESET}"
+    log "${YELLOW}  1. Temporarily rename ~/.Rprofile (or the project-level .Rprofile)${RESET}"
+    log "${YELLOW}  2. Or run the R scripts manually from an R console:${RESET}"
+    log ""
+    log "${CYAN}     setwd(\"${PROJECT_ROOT}/code\")${RESET}"
+    log "${CYAN}     install.packages(c(\"arrow\", \"cmprsk\", \"data.table\", \"dplyr\", \"ggplot2\",${RESET}"
+    log "${CYAN}                        \"tidyverse\", \"writexl\", \"jsonlite\", \"patchwork\", \"tidyr\"))${RESET}"
+    log "${CYAN}     source(\"03_combined_analysis.R\")${RESET}"
+    log "${CYAN}     source(\"sensitivity_forest_plots.R\")${RESET}"
+    log ""
+  fi
 fi
 
 log ""
