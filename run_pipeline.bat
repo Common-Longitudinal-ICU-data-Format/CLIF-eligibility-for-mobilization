@@ -3,8 +3,8 @@ REM ═════════════════════════�
 REM  run_pipeline.bat — Execute the full CLIF mobilization analysis pipeline
 REM
 REM  Steps:
-REM    1. Python  01_cohort_identification_marimo.py   (cohort + STROBE)
-REM    2. Python  02_mobilization_analysis_marimo.py   (criteria, tables, sensitivity)
+REM    1. Python  01_cohort_identification.py   (cohort + STROBE)
+REM    2. Python  02_mobilization_analysis.py   (criteria, tables, sensitivity)
 REM    3. R       03_combined_analysis.R               (CIF, Fine-Gray, forest plots)
 REM    4. R       sensitivity_forest_plots.R           (sensitivity forest plots)
 REM
@@ -44,6 +44,7 @@ call :log ""
 
 REM ── helpers ──────────────────────────────────────────────────────────────────
 set "PYTHONUNBUFFERED=1"
+set "PYTHONIOENCODING=utf-8"
 set "MPLBACKEND=Agg"
 set "PYTHONPATH=%PROJECT_ROOT%\code;%PYTHONPATH%"
 
@@ -55,10 +56,10 @@ REM ── pipeline ────────────────────
 cd /d "%PROJECT_ROOT%\code"
 
 REM Step 1: Cohort Identification
-call :run_step "01 Cohort Identification" uv run --project "%PROJECT_ROOT%" python 01_cohort_identification_marimo.py
+call :run_step "01 Cohort Identification" uv run --project "%PROJECT_ROOT%" python 01_cohort_identification.py
 
 REM Step 2: Mobilization Analysis
-call :run_step "02 Mobilization Analysis" uv run --project "%PROJECT_ROOT%" python 02_mobilization_analysis_marimo.py
+call :run_step "02 Mobilization Analysis" uv run --project "%PROJECT_ROOT%" python 02_mobilization_analysis.py
 
 REM Step 3-4: R scripts
 where Rscript >nul 2>nul
