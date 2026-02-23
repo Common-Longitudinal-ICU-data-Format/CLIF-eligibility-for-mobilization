@@ -1,0 +1,27 @@
+[project]
+name = "clif-eligibility-for-mobilization"
+version = "0.1.0"
+description = "CLIF Eligibility for Early Mobilization Analysis"
+requires-python = ">=3.10"
+dependencies = [
+    "clifpy==0.3.8",
+    "duckdb==1.4.0",
+    "pyarrow==21.0.0",
+    "pandas==2.3.2",
+    "kaleido>=0.2.1",
+    "matplotlib>=3.9.4",
+    "numpy>=2.0.2",
+    "plotly>=6.0.1",
+    "seaborn>=0.13.2",
+    "tableone>=0.9.5",
+    "tqdm>=4.67.1",
+    "upsetplot>=0.9.0",
+    "marimo"
+]
+
+[tool.uv]
+dev-dependencies = [
+    "jupyter>=1.1.1",
+    "jupyterlab>=4.4.1",
+    "ipykernel>=6.29.5",
+]

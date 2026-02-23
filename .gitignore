@@ -7,8 +7,13 @@
 .Rproj.user
 
 ## ignore the renv initialization file
-initialize_renv.R
-
+archive_2026-02-18/
+code/00_project_tour.py
+code/__pycache__/
+code/scripts/
+output 10-03-51-584/
+output/
+rerun.md
 ## ignore filtered CLIF tables stored as Rdata
 *.RData
 
@@ -21,8 +26,9 @@ clif_*.fst
 *.pdf
 *.html
 
-# ignore the venv
+# ignore virtual environments
 .mobilization
+.venv
 
 # ignore configs
 config_mimic.json
@@ -43,12 +49,10 @@ sofa_score_mimic.py
 *.fst
 *.parquet
 *.png
-subhazard_summary.json
-subhazard_summary_72hrs.json
-fg_model_summary.txt
-fg_model_summary_72hrs.txt
-fg_model_summary_weekday_72hrs.txt
-subhazard_summary_weekday_72hrs.json
+subhazard_summary*.json
+shr_sensitivity_*.json
+federation_sensitivity_*.json
+fg_model_summary*.txt
 
 output_old/
 code/logs/
@@ -57,6 +61,14 @@ package-lock.json
 # log files 
 *.log
 # ai files 
+.claude
 CLAUDE.md
 todo.md
 dashboard_review.md
+
+.serena/
+check.ipynb
+docs/
+manuscript/
+memory_optimization_suggestions.md
+output_ucmc_0725/

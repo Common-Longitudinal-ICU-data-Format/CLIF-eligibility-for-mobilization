@@ -2,8 +2,7 @@
 
 ## Objective
 
-The primary objective of this project is to determine the windows of opportunity for safely mobilizing patients on ventilators within the first 72 hours of first intubation, during business hours (8am-5pm). The analysis is guided by three established criteria sets, *Patel et al.*, and  *TEAM Study*, as well as a consensus criteria approach, which includes Green, Yellow, and Red safety flags.
-
+The primary objective of this project is to determine the windows of opportunity for safely mobilizing patients on ventilators within the first 72 hours of first intubation, during business hours (8am-5pm). The analysis is guided by three established criteria sets, *Patel et al.*, and *TEAM Study*, as well as a consensus criteria approach, which includes Green, Yellow, and Red safety flags.
 
 ## Required CLIF tables and fields
 
@@ -11,15 +10,15 @@ The following tables are required:
 1. **patient**: `patient_id`, `race_category`, `ethnicity_category`, `sex_category`, `death_dttm`
 2. **hospitalization**: `patient_id`, `hospitalization_id`, `admission_dttm`, `discharge_dttm`, `age_at_admission`
 3. **vitals**: `hospitalization_id`, `recorded_dttm`, `vital_category`, `vital_value`
-   - `vital_category` = 'heart_rate', 'resp_rate', 'sbp', 'dbp', 'map', 'resp_rate', 'spo2', ''weight_kg', 'height_cm'
+   - `vital_category` = 'heart_rate', 'resp_rate', 'sbp', 'dbp', 'map', 'spo2', 'weight_kg', 'height_cm'
 4. **labs**: `hospitalization_id`, `lab_result_dttm`, `lab_category`, `lab_value`
    - `lab_category` = 'lactate', 'creatinine', 'bilirubin_total', 'po2_arterial', 'platelet_count'
 5. **medication_admin_continuous**: `hospitalization_id`, `admin_dttm`, `med_name`, `med_category`, `med_dose`, `med_dose_unit`
    - `med_category` = "norepinephrine", "epinephrine", "phenylephrine", "vasopressin", "dopamine", "angiotensin", "nicardipine", "nitroprusside", "clevidipine", "cisatracurium", "vecuronium", "rocuronium"
 6. **respiratory_support**: `hospitalization_id`, `recorded_dttm`, `device_category`, `mode_category`, `tracheostomy`, `fio2_set`, `lpm_set`, `resp_rate_set`, `peep_set`, `resp_rate_obs`
-7. crrt_therapy: `hospitalization_id`, `recorded_dttm`
+7. **crrt_therapy**: `hospitalization_id`, `recorded_dttm`
 
-## Cohort Identification 
+## Cohort Identification
 
 The study period is from January 1, 2018, to December 31, 2024. The cohort consists of patients who were placed on invasive ventilation at any point during their hospitalization within this time period. Encounters that were intubated for less than 4 hours were excluded. Additionally, encounters that received tracheostomy or were receiving any paralytic drug were considered ineligible to be mobilised for that hour.
 
@@ -29,61 +28,57 @@ The study period is from January 1, 2018, to December 31, 2024. The cohort consi
 2. Rename `config_template.json` to `config.json`.
 3. Update the `config.json` with site-specific settings.
 
+## Pipeline execution
 
-## Environment setup and project execution
+The full analysis pipeline is executed via `run_pipeline.sh` (macOS/Linux) or `run_pipeline.bat` (Windows). Both use [uv](https://docs.astral.sh/uv/) for dependency management.
 
-The environment setup code is provided in the `run_project.sh` file for macOS and `run_project.bat` for Windows.
+### Prerequisites
 
-**For macOS:**
+- **Python 3.11+** with [uv](https://docs.astral.sh/uv/getting-started/installation/) installed
+- **R 4.x** with packages: `cmprsk`, `data.table`, `dplyr`, `ggplot2`, `writexl`, `jsonlite`, `arrow`
+- CLIF data tables in the format specified by `config.json`
 
-1. Make the script executable: 
+### Running the pipeline
+
+**macOS / Linux:**
 ```bash
-chmod +x run_project.sh
+chmod +x run_pipeline.sh
+./run_pipeline.sh
 ```
 
-2. Run the script:
-```bash
-./run_project.sh
-```
-
-3. Restart your IDE to load the new virtual environment and select the `Python (mobilization)` kernel in the Jupyter notebook.
-
-**For Windows:**
-
-1. Run the script in the command prompt:
+**Windows:**
 ```bat
-run_project.bat
+run_pipeline.bat
 ```
 
-## Manual Setup and Execution
+### Pipeline steps
 
-If you prefer to run the analysis manually, follow these steps:
+| Step | Script | Language | Description |
+|------|--------|----------|-------------|
+| 1 | `01_cohort_identification_marimo.py` | Python | Cohort identification, STROBE diagram, hourly scaffold |
+| 2 | `02_mobilization_analysis_marimo.py` | Python | Eligibility criteria, TableOne, failure analysis, sensitivity |
+| 3 | `03_combined_analysis.R` | R | CIF curves, Fine-Gray SHR, stacked sensitivity CIF/SHR |
+| 4 | `sensitivity_forest_plots.R` | R | Sensitivity forest plots |
 
-1. **Setup Python Environment**
-   - Create a virtual environment: `python -m venv .mobilization`
-   - Activate the environment:
-     - Windows: `.mobilization\Scripts\activate`
-     - macOS/Linux: `source .mobilization/bin/activate`
-   - Install dependencies: 
-     ```bash
-     pip install -r requirements.txt
-     pip install jupyter ipykernel papermill
-     ```
-   - Register kernel: `python -m ipykernel install --user --name=.mobilization --display-name="Python (mobilization)"`
-   - Restart your IDE to load the new virtual environment and select the `Python (mobilization)` kernel in the Jupyter notebook.
 
-3. **Run Analysis**
-   Run the following files from the code directory:
-   1. Run the [01_cohort_identification.ipynb](01_cohort_identification.ipynb). Make sure you have all the required tables, variables and elements mentioned at the beginning of the script.
-   2. Run the [02_mobilization_analysis.ipynb](02_mobilization_analysis.ipynb). 
-   3. Run the [03_competing_risk_analysis.R](03_competing_risk_analysis.R). 
-   4. Upload results from [output/final](../output/final/) to the project box folder. 
+## Project structure
 
-4. **OPTIONAL: Launch Dashboard**
-   If you want to explore the patient level data for each criteria, checkout this dashboard
-   - Navigate to app directory: `cd ../app`
-   - Start Streamlit server: `streamlit run mobilization_dashboard.py`
-
+```
+├── code/
+│   ├── 01_cohort_identification_marimo.py   # Step 1: Cohort + STROBE
+│   ├── 02_mobilization_analysis_marimo.py   # Step 2: Criteria + analysis
+│   ├── 03_combined_analysis.R               # Step 3: CIF + Fine-Gray
+│   ├── sensitivity_forest_plots.R           # Step 4: Forest plots
+│   ├── pyCLIF.py                            # CLIF data loading utilities
+│   ├── sofa_score.py                        # SOFA score (1997 definition)
+│   └── waterfall.py                         # Eligibility logic
+├── config/
+│   ├── config_template.json                 # Site config template
+│   └── outlier_config.json                  # Outlier thresholds
+├── run_pipeline.sh                          # Pipeline runner (macOS/Linux)
+├── run_pipeline.bat                         # Pipeline runner (Windows)
+└── pyproject.toml                           # Python dependencies (uv)
+```
 
 ## References
 
@@ -92,5 +87,3 @@ If you prefer to run the analysis manually, follow these steps:
 3. Hodgson CL, Stiller K, Needham DM, Tipping CJ, Harrold M, Baldwin CE, Bradley S, Berney S, Caruana LR, Elliott D, Green M, Haines K, Higgins AM, Kaukonen KM, Leditschke IA, Nickels MR, Paratz J, Patman S, Skinner EH, Young PJ, Zanni JM, Denehy L, Webb SA. Expert consensus and recommendations on safety criteria for active mobilization of mechanically ventilated critically ill adults. Crit Care. 2014 Dec 4;18(6):658. doi: 10.1186/s13054-014-0658-y. [Link](https://pubmed.ncbi.nlm.nih.gov/25475522/)
 4. Ohbe H, Jo T, Matsui H, Fushimi K, Yasunaga H. Differences in effect of early enteral nutrition on mortality among ventilated adults with shock requiring low-, medium-, and high-dose noradrenaline: A propensity-matched analysis. Clin Nutr. 2020 Feb;39(2):460-467. doi: 10.1016/j.clnu.2019.02.020. [Link](https://pubmed.ncbi.nlm.nih.gov/30808573/)
 5. Goradia S, Sardaneh AA, Narayan SW, Penm J, Patanwala AE. Vasopressor dose equivalence: A scoping review and suggested formula. J Crit Care. 2021 Feb;61:233-240. doi: 10.1016/j.jcrc.2020.11.002. [Link](https://pubmed.ncbi.nlm.nih.gov/33220576/)
-
-
