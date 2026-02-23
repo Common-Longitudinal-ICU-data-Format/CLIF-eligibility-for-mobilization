@@ -1616,7 +1616,7 @@ def tableone_72h(TableOne, final_df, final_df_blocks, log, pd, pyCLIF):
 
     # --- TableOne variables ---
     _categorical = ['sex_category', 'race_new', 'ethnicity_category', 'location_category', 'is_dead',
-                    'block_sepsis_24h', 'block_sepsis_72h', 'block_sepsis_anytime']
+                    'block_sepsis_24h', 'block_sepsis_72h', 'block_sepsis_anytime', 'crrt_flag']
     _continuous = ['age_at_admission', 'bmi', 'sofa_cv_97', 'sofa_coag', 'sofa_renal',
                   'sofa_liver', 'sofa_resp', 'sofa_cns', 'sofa_total',
                   'ne_calc_last', 'max_peep_set', 'min_fio2_set', 'p_f', 's_f']
