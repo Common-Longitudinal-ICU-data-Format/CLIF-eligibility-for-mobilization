@@ -1586,7 +1586,8 @@ def tableone_72h(TableOne, final_df, final_df_blocks, log, pd, pyCLIF):
         'patel_flag': 'max', 'team_flag': 'max', 'any_yellow_or_green_no_red': 'max',
         'all_green': 'max', 'all_green_no_red': 'max'
     }).reset_index()
-    _clinical_stats = _final_df_72h.groupby('encounter_block').agg({
+    _final_df_24h = final_df.query("time_from_vent <= 24")
+    _clinical_stats = _final_df_24h.groupby('encounter_block').agg({
         'ne_calc_last': 'max', 'max_peep_set': 'mean', 'min_fio2_set': 'mean'
     }).reset_index()
 
