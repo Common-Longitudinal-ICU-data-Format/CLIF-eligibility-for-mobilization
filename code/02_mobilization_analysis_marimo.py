@@ -2014,6 +2014,54 @@ def aggregates_72h(
     plt.savefig(f'{graphs_folder}eligibility_by_business_hours_72hrs_{site_name}.png')
     plt.close()
 
+    # ── Patients eligible for ENTIRE 8AM-5PM block (rerun.md 5.1) ──
+    log("\n" + "=" * 80)
+    log("FULL BUSINESS DAY ELIGIBILITY (8AM-5PM)")
+    log("=" * 80)
+
+    _bus_hours_set = set(range(8, 17))  # hours 8,9,...,16 = 9 hours
+    _n_bus_hours = len(_bus_hours_set)
+    _bus_df = _df_72h[_df_72h['recorded_hour'].isin(_bus_hours_set)].copy()
+    _bus_df['_date'] = pd.to_datetime(_bus_df['recorded_date']).dt.date
+
+    _full_day_rows = []
+    for _crit, _flag in _BUSINESS_FLAGS.items():
+        # For each encounter × date, count eligible business hours
+        _elig_by_day = _bus_df.groupby(['encounter_block', '_date']).agg(
+            n_bus_hours=('recorded_hour', 'nunique'),
+            n_eligible=(_flag, 'sum')
+        ).reset_index()
+        # A "full business day eligible" = all observed business hours on that day are eligible
+        # Only count days where all 9 business hours are observed
+        _full_days = _elig_by_day[
+            (_elig_by_day['n_bus_hours'] == _n_bus_hours) &
+            (_elig_by_day['n_eligible'] == _n_bus_hours)
+        ]
+        _n_full_days = len(_full_days)
+        _n_patients_with_full_day = _full_days['encounter_block'].nunique()
+        # Total patient-days with complete business hours
+        _complete_days = _elig_by_day[_elig_by_day['n_bus_hours'] == _n_bus_hours]
+        _n_complete_days = len(_complete_days)
+        _n_patients_with_complete_day = _complete_days['encounter_block'].nunique()
+
+        _full_day_rows.append({
+            'Criteria': _crit,
+            'Total_Patients': _total_patients,
+            'Patients_With_Complete_Business_Day': _n_patients_with_complete_day,
+            'Patients_Eligible_Entire_Business_Day': _n_patients_with_full_day,
+            'Pct_Eligible_Entire_Day': round(100 * _n_patients_with_full_day / _n_patients_with_complete_day, 1) if _n_patients_with_complete_day > 0 else 0,
+            'Total_Complete_Business_Days': _n_complete_days,
+            'Full_Day_Eligible_Days': _n_full_days,
+            'Pct_Days_Fully_Eligible': round(100 * _n_full_days / _n_complete_days, 1) if _n_complete_days > 0 else 0,
+        })
+        log(f"  {_crit}: {_n_patients_with_full_day}/{_n_patients_with_complete_day} patients "
+            f"({_full_day_rows[-1]['Pct_Eligible_Entire_Day']}%) had ≥1 fully eligible business day | "
+            f"{_n_full_days}/{_n_complete_days} patient-days ({_full_day_rows[-1]['Pct_Days_Fully_Eligible']}%) fully eligible")
+
+    _full_day_df = pd.DataFrame(_full_day_rows)
+    _full_day_df.to_csv(f'{pyCLIF.project_root}/output/final/{site_name}_full_business_day_eligibility.csv', index=False)
+    log(f"Saved: {site_name}_full_business_day_eligibility.csv")
+
     agg72_done = True
     return
 

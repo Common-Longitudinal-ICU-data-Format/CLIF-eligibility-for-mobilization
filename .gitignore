@@ -11,7 +11,6 @@ archive_2026-02-18/
 code/00_project_tour.py
 code/__pycache__/
 code/scripts/
-code/sensitivity_forest_plots.R
 output 10-03-51-584/
 output/
 rerun.md
@@ -50,12 +49,10 @@ sofa_score_mimic.py
 *.fst
 *.parquet
 *.png
-subhazard_summary.json
-subhazard_summary_72hrs.json
-fg_model_summary.txt
-fg_model_summary_72hrs.txt
-fg_model_summary_weekday_72hrs.txt
-subhazard_summary_weekday_72hrs.json
+subhazard_summary*.json
+shr_sensitivity_*.json
+federation_sensitivity_*.json
+fg_model_summary*.txt
 
 output_old/
 code/logs/

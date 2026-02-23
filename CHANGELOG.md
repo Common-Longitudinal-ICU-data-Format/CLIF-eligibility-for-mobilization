@@ -95,3 +95,41 @@ Initial implementation.
   - Generate Weekday Analysis (03 script)
 - Fill values of fio2_set if the device is nasal cannula, and lpm_set is available. Follow [this mapping](https://www.respiratorytherapyzone.com/oxygen-flow-rate-fio2/)
 - Created a patient facing dashboard for this cohort, specifically for mobilization criteria. 
+
+---
+
+## Version 12 – February 22, 2026
+
+1. Marimo migration 
+- Migrated all analysis notebooks from Jupyter (`.ipynb`) to **marimo** (`.py`).
+- New `run_pipeline.sh` (macOS/Linux) and `run_pipeline.bat` (Windows) using **uv** for dependency management.
+- Pipeline: `01_cohort_identification_marimo.py` → `02_mobilization_analysis_marimo.py` → `03_combined_analysis.R` → `sensitivity_forest_plots.R`.
+- Archived old Jupyter notebooks, `.py` scripts, and `run_project.sh`/`.bat`.
+
+2. Fill strategy overhaul
+- Implemented **slice-first** fill: 72h slice → forward-fill only (no back-fill). Prevents cross-boundary contamination.
+- Dual datasets: `final_df` (72h primary, ffill-only) and `final_df_all` (all hours for competing risk / legacy).
+- Grouped `ffill()` — always `.groupby('encounter_block').ffill()` 
+
+3. Stacked sensitivity analysis (4 definitions × 2 cohorts)
+- **Original cohort (IMV ≥4h)**: 1h any-day, 1h weekday-only, 4h-continuous any-day, 4h-continuous weekday.
+- **IMV ≥24h subcohort**: same 4 definitions.
+- Diamond partial order validation (1h_weekday and 4h_anyday are incomparable — different restriction dimensions).
+- Total: 32 sensitivity datasets (4 criteria × 8 definitions).
+
+4. Unified R analysis
+- Merged `03_competing_risk_analysis.R` and `05_sensitivity_competing_risk.R` into single `03_combined_analysis.R`.
+- Part A: Main CIF + Fine-Gray (full / 72h / weekday-only).
+- Part B: Stacked sensitivity CIF, median times, subdistribution hazard ratios, forest plots.
+
+5. Other
+- 6-group extubation curve (split extubated into eligible/not-eligible).
+- Time-to-eligibility windows at [12, 24, 36, 48, 60, 72]h.
+
+6. Bug fixes
+- Fixed FiO2 double-division bug in `pyCLIF.refill_fio2()` 
+- Fixed R SHR: pass outcome variable directly to `crr()` instead of collapsing competing events.
+- Fixed combination analysis pandas compat error (`only 0-dimensional arrays can be converted to Python scalars`).
+- Vectorized `_pick_outcome` in `create_competing_risk_dataset` — replaced `.apply()` with `np.where()`.
+- BMI 30-day time window constraint added.
+---

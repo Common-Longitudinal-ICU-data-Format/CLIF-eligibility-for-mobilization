@@ -423,80 +423,7 @@ if (length(all_sens) == 0) {
   cat("\nMedian Times Summary:\n")
   print(median_results %>% select(Criteria, Cohort, Label, Pct_Eligible, Median_Hours, Q1_Hours, Q3_Hours))
 
-  # ── SHR (Fine-Gray) — stacked definitions vs primary ──
-  cat("\nCalculating subdistribution hazard ratios...\n")
-  shr_results <- list()
-
-  for (crit in names(criteria_map)) {
-    for (cohort_name in names(sensitivity_types)) {
-      stypes <- sensitivity_types[[cohort_name]]
-      # Reference = first type (1h_anyday)
-      ref_key <- paste(crit, stypes[1], sep = "_")
-      if (!(ref_key %in% names(all_sens))) next
-
-      test_keys <- paste(crit, stypes[-1], sep = "_")
-      test_keys <- test_keys[test_keys %in% names(all_sens)]
-      if (length(test_keys) == 0) next
-
-      ref_df <- all_sens[[ref_key]]
-      ref_df$def_group <- "reference"
-
-      for (tk in test_keys) {
-        test_df <- all_sens[[tk]]
-        test_df$def_group <- "test"
-        combined <- bind_rows(ref_df[, c("encounter_block", "t_event", "outcome", "def_group")],
-                              test_df[, c("encounter_block", "t_event", "outcome", "def_group")])
-        combined$is_test <- as.integer(combined$def_group == "test")
-
-        valid <- !is.na(combined$t_event) & !is.na(combined$outcome) & combined$t_event > 0
-        if (sum(valid) < 30) next
-
-        tryCatch({
-          tv <- combined$t_event[valid]
-          sv <- combined$outcome[valid]
-          cov <- matrix(combined$is_test[valid], ncol = 1)
-
-          fg <- crr(tv, sv, cov1 = cov, failcode = 1, cencode = 0)
-          se <- sqrt(diag(fg$var))
-          fg_key <- paste(crit, cohort_name, unique(test_df$sensitivity), sep = "_")
-          shr_results[[fg_key]] <- data.frame(
-            Criteria    = criteria_map[[crit]],
-            Cohort      = cohort_name,
-            Comparison  = unique(test_df$sensitivity),
-            Label       = unique(test_df$label),
-            Reference   = unique(ref_df$sensitivity),
-            SHR         = exp(fg$coef[1]),
-            CI_Lower    = exp(fg$coef[1] - 1.96 * se[1]),
-            CI_Upper    = exp(fg$coef[1] + 1.96 * se[1]),
-            P_Value     = 2 * (1 - pnorm(abs(fg$coef[1] / se[1]))),
-            stringsAsFactors = FALSE
-          )
-          # JSON export for federation (variance-covariance for meta-analysis)
-          fg_export <- list(
-            coef   = fg$coef[1],
-            var    = fg$var[1, 1],
-            se     = se[1],
-            shr    = exp(fg$coef[1]),
-            n      = fg$n,
-            events = as.numeric(table(combined$outcome[valid]))
-          )
-          write_json(fg_export,
-                     path = file.path(out_dir, sprintf("shr_sensitivity_%s.json", fg_key)),
-                     digits = 8, auto_unbox = TRUE)
-        }, error = function(e)
-          cat(sprintf("  SHR error for %s/%s/%s: %s\n",
-                      crit, cohort_name, tk, e$message)))
-      }
-    }
-  }
-
-  shr_combined <- bind_rows(shr_results)
-  if (nrow(shr_combined) > 0) {
-    cat("\nSubdistribution Hazard Ratios (vs 1h Any Day):\n")
-    print(shr_combined %>% select(Criteria, Cohort, Label, SHR, CI_Lower, CI_Upper, P_Value))
-  }
-
-  # ── Visualizations ──
+  # ── Visualizations (generated BEFORE SHR to ensure plots exist even if crr() is slow) ──
   cat("\nGenerating sensitivity visualizations...\n")
 
   stacking_colors <- c(
@@ -568,35 +495,6 @@ if (length(all_sens) == 0) {
     cat("  Created: stacked_cif_imv24h.pdf/png\n")
   }
 
-  # --- SHR Forest plot ---
-  if (nrow(shr_combined) > 0) {
-    forest_data <- shr_combined %>%
-      mutate(
-        plot_label = paste(Criteria, "-", Label),
-        estimate_label = sprintf("%.2f (%.2f-%.2f)", SHR, CI_Lower, CI_Upper)
-      )
-
-    p3 <- ggplot(forest_data, aes(y = reorder(plot_label, -SHR), x = SHR)) +
-      geom_vline(xintercept = 1, linetype = "dashed", color = "gray50") +
-      geom_errorbarh(aes(xmin = CI_Lower, xmax = CI_Upper),
-                     height = 0.25, linewidth = 1) +
-      geom_point(aes(color = Cohort), size = 4) +
-      geom_text(aes(label = estimate_label),
-                x = max(forest_data$CI_Upper) + 0.05, hjust = 0, size = 3) +
-      scale_color_manual(values = c(original = "#1976D2", imv24h = "#C62828")) +
-      labs(title = "Subdistribution Hazard Ratios for Eligibility",
-           subtitle = "Reference: 1h Any Day (within each cohort)",
-           x = "SHR (95% CI)", y = "") +
-      theme_minimal(base_size = 12) +
-      theme(panel.grid.major.y = element_blank())
-
-    ggsave(file.path(out_dir, "graphs", "stacked_shr_forest.pdf"),
-           p3, width = 14, height = max(6, nrow(forest_data) * 0.6))
-    ggsave(file.path(out_dir, "graphs", "stacked_shr_forest.png"),
-           p3, width = 14, height = max(6, nrow(forest_data) * 0.6), dpi = 300)
-    cat("  Created: stacked_shr_forest.pdf/png\n")
-  }
-
   # --- Eligibility percentage bars ---
   if (nrow(median_results) > 0) {
     elig_bars <- median_results %>%
@@ -628,13 +526,141 @@ if (length(all_sens) == 0) {
     cat("  Created: stacked_eligibility_bars.pdf/png\n")
   }
 
-  # ── Save all results ──
-  cat("\nSaving sensitivity results...\n")
+  # ── Save non-SHR results early ──
+  cat("\nSaving sensitivity results (non-SHR)...\n")
 
   write.csv(median_results,
             file.path(out_dir, "stacked_sensitivity_medians.csv"),
             row.names = FALSE)
   cat("  Saved: stacked_sensitivity_medians.csv\n")
+
+  write.csv(data_summary,
+            file.path(out_dir, "stacked_sensitivity_data_summary.csv"),
+            row.names = FALSE)
+  cat("  Saved: stacked_sensitivity_data_summary.csv\n")
+
+  # ── SHR (Fine-Gray) — stacked definitions vs primary (slow, runs last) ──
+  cat("\nCalculating subdistribution hazard ratios (24 comparisons, may take a few minutes)...\n")
+  flush.console()
+  shr_results <- list()
+  shr_count <- 0
+  shr_total <- sum(sapply(names(criteria_map), function(crit) {
+    sum(sapply(names(sensitivity_types), function(cohort_name) {
+      stypes <- sensitivity_types[[cohort_name]]
+      ref_key <- paste(crit, stypes[1], sep = "_")
+      if (!(ref_key %in% names(all_sens))) return(0)
+      test_keys <- paste(crit, stypes[-1], sep = "_")
+      sum(test_keys %in% names(all_sens))
+    }))
+  }))
+
+  for (crit in names(criteria_map)) {
+    for (cohort_name in names(sensitivity_types)) {
+      stypes <- sensitivity_types[[cohort_name]]
+      # Reference = first type (1h_anyday)
+      ref_key <- paste(crit, stypes[1], sep = "_")
+      if (!(ref_key %in% names(all_sens))) next
+
+      test_keys <- paste(crit, stypes[-1], sep = "_")
+      test_keys <- test_keys[test_keys %in% names(all_sens)]
+      if (length(test_keys) == 0) next
+
+      ref_df <- all_sens[[ref_key]]
+      ref_df$def_group <- "reference"
+
+      for (tk in test_keys) {
+        shr_count <- shr_count + 1
+        cat(sprintf("  [%d/%d] %s / %s / %s ... ", shr_count, shr_total,
+                    criteria_map[[crit]], cohort_name, tk))
+        flush.console()
+
+        test_df <- all_sens[[tk]]
+        test_df$def_group <- "test"
+        combined <- bind_rows(ref_df[, c("encounter_block", "t_event", "outcome", "def_group")],
+                              test_df[, c("encounter_block", "t_event", "outcome", "def_group")])
+        combined$is_test <- as.integer(combined$def_group == "test")
+
+        valid <- !is.na(combined$t_event) & !is.na(combined$outcome) & combined$t_event > 0
+        if (sum(valid) < 30) { cat("SKIP (n<30)\n"); next }
+
+        tryCatch({
+          tv <- combined$t_event[valid]
+          sv <- combined$outcome[valid]
+          cov <- matrix(combined$is_test[valid], ncol = 1)
+
+          fg <- crr(tv, sv, cov1 = cov, failcode = 1, cencode = 0)
+          se <- sqrt(diag(fg$var))
+          fg_key <- paste(crit, cohort_name, unique(test_df$sensitivity), sep = "_")
+          shr_results[[fg_key]] <- data.frame(
+            Criteria    = criteria_map[[crit]],
+            Cohort      = cohort_name,
+            Comparison  = unique(test_df$sensitivity),
+            Label       = unique(test_df$label),
+            Reference   = unique(ref_df$sensitivity),
+            SHR         = exp(fg$coef[1]),
+            CI_Lower    = exp(fg$coef[1] - 1.96 * se[1]),
+            CI_Upper    = exp(fg$coef[1] + 1.96 * se[1]),
+            P_Value     = 2 * (1 - pnorm(abs(fg$coef[1] / se[1]))),
+            stringsAsFactors = FALSE
+          )
+          cat(sprintf("SHR=%.3f\n", exp(fg$coef[1])))
+          # JSON export for federation (variance-covariance for meta-analysis)
+          fg_export <- list(
+            coef   = fg$coef[1],
+            var    = fg$var[1, 1],
+            se     = se[1],
+            shr    = exp(fg$coef[1]),
+            n      = fg$n,
+            events = as.numeric(table(combined$outcome[valid]))
+          )
+          write_json(fg_export,
+                     path = file.path(out_dir, sprintf("shr_sensitivity_%s.json", fg_key)),
+                     digits = 8, auto_unbox = TRUE)
+        }, error = function(e) {
+          cat(sprintf("ERROR: %s\n", e$message))
+        })
+        flush.console()
+      }
+    }
+  }
+
+  shr_combined <- bind_rows(shr_results)
+  if (nrow(shr_combined) > 0) {
+    cat("\nSubdistribution Hazard Ratios (vs 1h Any Day):\n")
+    print(shr_combined %>% select(Criteria, Cohort, Label, SHR, CI_Lower, CI_Upper, P_Value))
+  }
+
+  # --- SHR Forest plot (requires shr_combined) ---
+  if (nrow(shr_combined) > 0) {
+    forest_data <- shr_combined %>%
+      mutate(
+        plot_label = paste(Criteria, "-", Label),
+        estimate_label = sprintf("%.2f (%.2f-%.2f)", SHR, CI_Lower, CI_Upper)
+      )
+
+    p3 <- ggplot(forest_data, aes(y = reorder(plot_label, -SHR), x = SHR)) +
+      geom_vline(xintercept = 1, linetype = "dashed", color = "gray50") +
+      geom_errorbarh(aes(xmin = CI_Lower, xmax = CI_Upper),
+                     height = 0.25, linewidth = 1) +
+      geom_point(aes(color = Cohort), size = 4) +
+      geom_text(aes(label = estimate_label),
+                x = max(forest_data$CI_Upper) + 0.05, hjust = 0, size = 3) +
+      scale_color_manual(values = c(original = "#1976D2", imv24h = "#C62828")) +
+      labs(title = "Subdistribution Hazard Ratios for Eligibility",
+           subtitle = "Reference: 1h Any Day (within each cohort)",
+           x = "SHR (95% CI)", y = "") +
+      theme_minimal(base_size = 12) +
+      theme(panel.grid.major.y = element_blank())
+
+    ggsave(file.path(out_dir, "graphs", "stacked_shr_forest.pdf"),
+           p3, width = 14, height = max(6, nrow(forest_data) * 0.6))
+    ggsave(file.path(out_dir, "graphs", "stacked_shr_forest.png"),
+           p3, width = 14, height = max(6, nrow(forest_data) * 0.6), dpi = 300)
+    cat("  Created: stacked_shr_forest.pdf/png\n")
+  }
+
+  # ── Save SHR-dependent results ──
+  cat("\nSaving SHR results...\n")
 
   if (nrow(shr_combined) > 0) {
     write.csv(shr_combined,
@@ -642,11 +668,6 @@ if (length(all_sens) == 0) {
               row.names = FALSE)
     cat("  Saved: stacked_sensitivity_shr.csv\n")
   }
-
-  write.csv(data_summary,
-            file.path(out_dir, "stacked_sensitivity_data_summary.csv"),
-            row.names = FALSE)
-  cat("  Saved: stacked_sensitivity_data_summary.csv\n")
 
   # Excel workbook with all sheets
   excel_list <- list(
