@@ -414,8 +414,12 @@ def step_c(
     # filter all_ids_base to only those with IMV
     _all_ids = all_ids_base[all_ids_base['hospitalization_id'].isin(_resp_support_filtered['hospitalization_id'].unique())].copy()
 
+    # Convert to site tz BEFORE waterfall (handles naive Databricks exports + UTC parquet)
+    _resp_support_filtered = pyCLIF.convert_datetime_columns_to_site_tz(_resp_support_filtered, pyCLIF.helper['timezone'])
+
     _rs = RespiratorySupport(data=_resp_support_filtered)
     _processed_resp_support = _rs.waterfall(id_col="hospitalization_id", verbose=True, return_dataframe=True)
+    # Re-convert after waterfall (waterfall preserves input tz; idempotent if already correct)
     _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
     _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
     

@@ -32,8 +32,6 @@ def imports():
     import pandas as pd
     import numpy as np
     import seaborn as sns
-    import plotly.express as px
-    import plotly.graph_objects as go
     from datetime import datetime
     from tableone import TableOne
     import pyCLIF
@@ -2088,7 +2086,7 @@ def _(mo):
 
 
 @app.cell
-def failure_subcomponents(final_df, go, graphs_folder, pd, pyCLIF, site_name):
+def failure_subcomponents(final_df, graphs_folder, pd, plt, pyCLIF, site_name):
     _criteria_info = {
         'patel_flag': {'resp_flag': 'patel_resp_flag', 'cardio_flag': 'patel_cardio_flag'},
         'team_flag': {'resp_flag': 'team_resp_flag', 'cardio_flag': 'team_cardio_flag'},
@@ -2134,19 +2132,24 @@ def failure_subcomponents(final_df, go, graphs_folder, pd, pyCLIF, site_name):
     _avg_failure_percentages['site_name'] = site_name
     _avg_failure_percentages.to_csv(f'{pyCLIF.project_root}/output/final/avg_failure_percentages_{site_name}.csv', index=False)
 
-    # Plotly stacked bar
-    import kaleido
-    _fig = go.Figure()
-    _fig.add_trace(go.Bar(x=_avg_failure_percentages['Criteria'], y=_avg_failure_percentages['Cardio Failure Only'],
-                          name='Cardio Failure Only', marker_color='#003366'))
-    _fig.add_trace(go.Bar(x=_avg_failure_percentages['Criteria'], y=_avg_failure_percentages['Resp Failure Only'],
-                          name='Resp Failure Only', marker_color='#983232'))
-    _fig.add_trace(go.Bar(x=_avg_failure_percentages['Criteria'], y=_avg_failure_percentages['Both Failures'],
-                          name='Both Failures', marker_color='#fdfd96'))
-    _fig.update_layout(barmode='stack', xaxis_title='Criteria',
-                       yaxis_title='Average Percentage of Business Hours Not Met (%)',
-                       yaxis=dict(range=[0, 100]), template='plotly_white', legend_title='Failure Type')
-    _fig.write_image(f'{graphs_folder}avg_failure_components_{site_name}.png')
+    # Matplotlib stacked bar
+    _fig, _ax = plt.subplots(figsize=(8, 6))
+    _x = range(len(_avg_failure_percentages))
+    _cardio = _avg_failure_percentages['Cardio Failure Only'].values
+    _resp = _avg_failure_percentages['Resp Failure Only'].values
+    _both = _avg_failure_percentages['Both Failures'].values
+    _ax.bar(_x, _cardio, label='Cardio Failure Only', color='#003366')
+    _ax.bar(_x, _resp, bottom=_cardio, label='Resp Failure Only', color='#983232')
+    _ax.bar(_x, _both, bottom=_cardio + _resp, label='Both Failures', color='#fdfd96')
+    _ax.set_xticks(_x)
+    _ax.set_xticklabels(_avg_failure_percentages['Criteria'].values)
+    _ax.set_xlabel('Criteria')
+    _ax.set_ylabel('Average Percentage of Business Hours Not Met (%)')
+    _ax.set_ylim(0, 100)
+    _ax.legend(title='Failure Type')
+    plt.tight_layout()
+    plt.savefig(f'{graphs_folder}avg_failure_components_{site_name}.png', dpi=300)
+    plt.close(_fig)
 
     fail_sub_done = True
     return
@@ -2536,22 +2539,13 @@ def _(mo):
 
 
 @app.cell
-def parallel_categories(final_df, log, pd, px, pyCLIF, site_name):
+def parallel_categories(final_df, log, pd, pyCLIF, site_name):
     _parallel_df = final_df[['patel_flag', 'team_flag', 'any_yellow_or_green_no_red', 'all_green']].copy()
     _parallel_df['patel_flag'] = _parallel_df['patel_flag'].apply(lambda x: 1 if x else 0)
     _parallel_df['team_flag'] = _parallel_df['team_flag'].apply(lambda x: 1 if x else 0)
     _parallel_df['any_yellow_or_green_no_red'] = _parallel_df['any_yellow_or_green_no_red'].apply(lambda x: 1 if x else 0)
     _parallel_df['all_green'] = _parallel_df['all_green'].apply(lambda x: 1 if x else 0)
 
-    _fig = px.parallel_categories(
-        _parallel_df, dimensions=['patel_flag', 'team_flag', 'any_yellow_or_green_no_red', 'all_green'],
-        color="patel_flag",
-        labels={'patel_flag': 'Patel Met', 'team_flag': 'TEAM Met',
-                'any_yellow_or_green_no_red': 'Yellow Flag', 'all_green': 'Green Flag'},
-        color_continuous_scale=px.colors.sequential.Inferno
-    )
-    _fig.update_layout(title="Parallel Categories Plot: Comparison of Criteria Satisfaction")
-    _fig.write_image(f'{pyCLIF.project_root}/output/final/graphs/parallel_categories_{site_name}.png')
     # Save aggregated co-occurrence counts (no patient-level data)
     _parallel_counts = _parallel_df.groupby(['patel_flag', 'team_flag', 'any_yellow_or_green_no_red', 'all_green']).size().reset_index(name='n_hours')
     _parallel_counts['site'] = site_name
