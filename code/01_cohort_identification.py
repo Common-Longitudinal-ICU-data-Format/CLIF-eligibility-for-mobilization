@@ -39,12 +39,30 @@ def imports():
     warnings.filterwarnings('ignore')
     import pyCLIF
     import sofa_score
-    from clifpy.tables.respiratory_support import RespiratorySupport
+    from clifpy.tables import (
+        Patient, Hospitalization, Adt,
+        Vitals, Labs, RespiratorySupport,
+        MedicationAdminContinuous
+    )
     import marimo as mo
+
+    clifpy_kwargs = {
+        'data_directory': pyCLIF.helper['tables_path'],
+        'filetype': pyCLIF.helper['file_type'],
+        'timezone': pyCLIF.helper['timezone'],
+    }
+
     return (
+        Adt,
         FancyArrowPatch,
+        Hospitalization,
+        Labs,
+        MedicationAdminContinuous,
+        Patient,
         Rectangle,
         RespiratorySupport,
+        Vitals,
+        clifpy_kwargs,
         json,
         mo,
         np,
@@ -228,10 +246,10 @@ def _(mo):
 
 
 @app.cell
-def load_tables(log, pyCLIF):
-    _patient = pyCLIF.load_data('clif_patient')
-    _hospitalization = pyCLIF.load_data('clif_hospitalization')
-    _adt = pyCLIF.load_data('clif_adt')
+def load_tables(Adt, Hospitalization, Patient, clifpy_kwargs, log, pyCLIF):
+    _patient = Patient.from_file(**clifpy_kwargs).df
+    _hospitalization = Hospitalization.from_file(**clifpy_kwargs).df
+    _adt = Adt.from_file(**clifpy_kwargs).df
 
     # ensure id variable is of dtype character
     _hospitalization['hospitalization_id'] = _hospitalization['hospitalization_id'].astype(str)
@@ -320,6 +338,7 @@ def _(mo):
 @app.cell
 def step_c(
     RespiratorySupport,
+    clifpy_kwargs,
     all_ids_base,
     log,
     outlier_cfg,
@@ -330,11 +349,11 @@ def step_c(
     log("\n=== STEP C: Load & process respiratory support => Apply Waterfall & Identify IMV usage ===\n")
 
     # 1) Load respiratory support
-    _resp_support_raw = pyCLIF.load_data(
-        'clif_respiratory_support',
+    _resp_support_raw = RespiratorySupport.from_file(
+        **clifpy_kwargs,
         columns=rst_required_columns,
         filters={'hospitalization_id': all_ids_base['hospitalization_id'].unique().tolist()}
-    )
+    ).df
 
     _resp_support = _resp_support_raw.copy()
     _resp_support['device_category'] = _resp_support['device_category'].str.lower()
@@ -522,6 +541,8 @@ def _(mo):
 
 @app.cell
 def step_e_scaffold(
+    Vitals,
+    clifpy_kwargs,
     all_ids_vent,
     block_vent_times,
     log,
@@ -538,11 +559,12 @@ def step_e_scaffold(
     log("\n=== STEP E: Hourly sequence generation BLOCK level ===\n")
 
     # 1) Load vitals
-    vitals_cohort = pyCLIF.load_data('clif_vitals',
+    vitals_cohort = Vitals.from_file(
+        **clifpy_kwargs,
         columns=vitals_required_columns,
         filters={'hospitalization_id': all_ids_vent['hospitalization_id'].unique().tolist(),
                  'vital_category': vitals_of_interest}
-    )
+    ).df
     vitals_cohort = pyCLIF.convert_datetime_columns_to_site_tz(vitals_cohort, pyCLIF.helper['timezone'])
     vitals_cohort['vital_value'] = pd.to_numeric(vitals_cohort['vital_value'], errors='coerce')
     vitals_cohort = vitals_cohort.sort_values(['hospitalization_id', 'recorded_dttm'])
@@ -1116,6 +1138,8 @@ def _(mo):
 
 @app.cell
 def meds_merge(
+    MedicationAdminContinuous,
+    clifpy_kwargs,
     all_ids_final,
     final_df_v,
     log,
@@ -1133,7 +1157,7 @@ def meds_merge(
         'hospitalization_id': all_ids_final['hospitalization_id'].unique().tolist(),
         'med_category': meds_of_interest
     }
-    _meds = pyCLIF.load_data('clif_medication_admin_continuous', columns=meds_required_columns, filters=_meds_filters)
+    _meds = MedicationAdminContinuous.from_file(**clifpy_kwargs, columns=meds_required_columns, filters=_meds_filters).df
     _meds = _meds.merge(all_ids_final, on='hospitalization_id', how='left')
     log("Unique encounters in meds", pyCLIF.count_unique_encounters(_meds))
 
@@ -1468,6 +1492,8 @@ def _(mo):
 
 @app.cell
 def labs_merge(
+    Labs,
+    clifpy_kwargs,
     all_ids_final,
     block_vent_times,
     final_df_m,
@@ -1481,7 +1507,7 @@ def labs_merge(
         'hospitalization_id': all_ids_final['hospitalization_id'].unique().tolist(),
         'lab_category': labs_of_interest
     }
-    _labs = pyCLIF.load_data('clif_labs', columns=labs_required_columns, filters=_labs_filters)
+    _labs = Labs.from_file(**clifpy_kwargs, columns=labs_required_columns, filters=_labs_filters).df
     log("unique encounters in labs", pyCLIF.count_unique_encounters(_labs))
     _labs['hospitalization_id'] = _labs['hospitalization_id'].astype(str)
     _labs = _labs.merge(all_ids_final, on='hospitalization_id', how='left')
