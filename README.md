@@ -46,10 +46,18 @@ chmod +x run_pipeline.sh
 ./run_pipeline.sh
 ```
 
-**Windows:**
+**Windows (Command Prompt):**
 ```bat
 run_pipeline.bat
 ```
+
+Both scripts:
+- Sync Python dependencies via `uv sync` before running
+- Run all 4 pipeline steps sequentially, logging each to `code/logs/`
+- Skip R steps gracefully if `Rscript` is not found on PATH
+- Print a summary of passed/failed steps at the end
+
+> **Windows note:** Ensure `uv` and `Rscript` are on your system PATH. If R is installed but `Rscript` is not recognized, add `C:\Program Files\R\R-4.x.x\bin` to your PATH environment variable.
 
 ### Pipeline steps
 

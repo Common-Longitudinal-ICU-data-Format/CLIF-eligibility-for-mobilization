@@ -414,15 +414,15 @@ def step_c(
     # filter all_ids_base to only those with IMV
     _all_ids = all_ids_base[all_ids_base['hospitalization_id'].isin(_resp_support_filtered['hospitalization_id'].unique())].copy()
 
-    # _processed_resp_support = waterfall.process_resp_support_waterfall(
-    #     _resp_support_filtered,
-    #     id_col="hospitalization_id",
-    #     verbose=True
-    # )
-    # _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
-    # _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
-    _processed_resp_support = pd.read_parquet(f'{pyCLIF.project_root}/output 10-03-51-584/intermediate/processed_resp_support.parquet')
+    _processed_resp_support = waterfall.process_resp_support_waterfall(
+        _resp_support_filtered,
+        id_col="hospitalization_id",
+        verbose=True
+    )
     _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
+    _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
+    # _processed_resp_support = pd.read_parquet(f'{pyCLIF.project_root}/output 10-03-51-584/intermediate/processed_resp_support.parquet')
+    # _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
     
     # Merge to get encounter_block
     _resp_stitched = _processed_resp_support.merge(
