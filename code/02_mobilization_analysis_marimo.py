@@ -44,6 +44,7 @@ def imports():
     print("clifpy version:", clifpy.__version__)
     import matplotlib.colors as mcolors
     from pathlib import Path
+    import json
     import marimo as mo
 
     return (
@@ -53,6 +54,7 @@ def imports():
         datetime,
         from_indicators,
         go,
+        json,
         mcolors,
         mo,
         np,
@@ -2318,17 +2320,25 @@ def enhanced_failure(
             _block_fail = _failed_matrix.groupby(_fail[id_col]).max()
             _combo_counts = _block_fail.value_counts()
             _top = _combo_counts.head(max_upset_combinations)
+
+            # UpSet plot (isolated — failure here doesn't block CSV export)
             if len(_top) > 0:
                 _top_tuples = [tuple(bool(v) for v in t) for t in _top.index.tolist()]
                 _subset_mask = _block_fail.apply(lambda x: tuple(bool(v) for v in x) in _top_tuples, axis=1)
                 _subset_data = _block_fail[_subset_mask]
                 if len(_subset_data) > 5:
-                    _upset_data = from_indicators(_subset_data.columns, _subset_data)
-                    _fig2 = plt.figure(figsize=(min(figure_width, 14), min(figure_height, 10)))
-                    UpSet(_upset_data, show_counts=True, sort_by="cardinality").plot(fig=_fig2)
-                    plt.suptitle(f"{crit_name}: Top {len(_top)} Failure Combinations", fontsize=12)
-                    plt.savefig(_out_dir / "failure_combinations_upset.png", dpi=200, bbox_inches='tight')
-                    plt.close()
+                    try:
+                        _subset_clean = _subset_data.astype({c: bool for c in _subset_data.columns})
+                        _upset_data = from_indicators(_subset_clean.columns, _subset_clean)
+                        _fig2 = plt.figure(figsize=(min(figure_width, 14), min(figure_height, 10)))
+                        UpSet(_upset_data, show_counts=True, sort_by="cardinality").plot(fig=_fig2)
+                        plt.suptitle(f"{crit_name}: Top {len(_top)} Failure Combinations", fontsize=12)
+                        plt.savefig(_out_dir / "failure_combinations_upset.png", dpi=200, bbox_inches='tight')
+                        plt.close()
+                    except Exception as e:
+                        log(f"[{crit_name}] UpSet plot skipped: {e}")
+
+            # CSV export (always runs, even if UpSet plot fails)
             _combo_data = _export_combination_data(_block_fail, _combo_counts, crit_name, sname, _out_dir, save_fig_data)
             # Federated-ready: top 15 combinations
             if _combo_data is not None and len(_combo_data) > 0:
@@ -2723,10 +2733,18 @@ def sensitivity_stacked(
         return _rolling.reindex(df.index).fillna(0).astype(int)
 
     def _compute_sensitivity(df, flag_col, label, criteria_name, cohort_name):
-        """Compute sensitivity stats for a given flag column."""
-        _first_elig = df[df[flag_col] == 1].groupby('encounter_block')['time_from_vent'].min()
-        _n_total = df['encounter_block'].nunique()
-        _n_eligible = len(_first_elig)
+        """Compute sensitivity stats using competing risk framework (consistent with R).
+
+        Uses create_competing_risk_dataset to determine eligibility — a patient
+        who dies/is discharged at or before their first eligible hour is NOT
+        counted as eligible (outcome != 1). This ensures Python summary numbers
+        match the R competing risk analysis exactly.
+        """
+        _cr = create_competing_risk_dataset(df, all_ids_w_outcome, flag_col=flag_col)
+        _n_total = len(_cr)
+        _elig_cr = _cr[_cr['outcome'] == 1]
+        _n_eligible = len(_elig_cr)
+        _first_elig = _elig_cr['time_eligibility']
         _pct_eligible = round(_n_eligible / _n_total * 100, 1) if _n_total > 0 else 0
 
         # SE for proportion (Wald) — needed for federated meta-analysis
@@ -2880,6 +2898,297 @@ def sensitivity_stacked(
     log("Validation passed: IMV≥24h cohort smaller than original for all criteria")
 
     sensitivity_done = True
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Sites Metadata
+    Generate `sites_metadata.json` for federated meta-analysis coordination.
+    """)
+    return
+
+
+@app.cell
+def sites_metadata(
+    all_ids_w_outcome,
+    final_df,
+    final_df_blocks,
+    json,
+    log,
+    np,
+    output_folder,
+    pd,
+    pyCLIF,
+    site_name,
+):
+    import datetime as _dt
+
+    _n_total = final_df['encounter_block'].nunique()
+
+    # Read the sensitivity summary to get primary eligibility
+    _sens_path = f'{output_folder}{site_name}_sensitivity_summary.csv'
+    _primary_row = None
+    try:
+        _sens_df = pd.read_csv(_sens_path)
+        _primary_row = _sens_df[
+            (_sens_df['criteria'] == 'Chicago') &
+            (_sens_df['sensitivity_type'] == 'original_1h_anyday')
+        ].iloc[0]
+    except Exception:
+        pass
+
+    # Date range from vent start times
+    _vent_starts = pd.to_datetime(final_df_blocks['block_vent_start_dttm'], errors='coerce').dropna()
+    _data_start = str(_vent_starts.min().date()) if len(_vent_starts) > 0 else "unknown"
+    _data_end = str(_vent_starts.max().date()) if len(_vent_starts) > 0 else "unknown"
+
+    # Demographics — try final_df_blocks first, fall back to all_ids_w_outcome
+    _demo = final_df_blocks if len(final_df_blocks) > 0 else all_ids_w_outcome
+    _age_med = float(_demo['age_at_admission'].median()) if 'age_at_admission' in _demo.columns else None
+    _age_q1 = float(_demo['age_at_admission'].quantile(0.25)) if 'age_at_admission' in _demo.columns else None
+    _age_q3 = float(_demo['age_at_admission'].quantile(0.75)) if 'age_at_admission' in _demo.columns else None
+    _pct_male = None
+    if 'sex_category' in _demo.columns:
+        _pct_male = round((_demo['sex_category'] == 'Male').sum() / len(_demo) * 100, 1)
+
+    # Mortality from all_ids_w_outcome (always has is_dead)
+    _mortality_pct = round(all_ids_w_outcome['is_dead'].mean() * 100, 1) if 'is_dead' in all_ids_w_outcome.columns else None
+
+    _metadata = {
+        "site_id": site_name,
+        "site_name": site_name,
+        "timezone": pyCLIF.timezone if hasattr(pyCLIF, 'timezone') else "unknown",
+        "data_start": _data_start,
+        "data_end": _data_end,
+        "n_total_encounters": int(_n_total),
+        "n_eligible_primary": int(_primary_row['n_eligible']) if _primary_row is not None else None,
+        "pct_eligible_primary": float(_primary_row['pct_eligible']) if _primary_row is not None else None,
+        "primary_criteria": "Chicago Criteria",
+        "primary_definition": "original_1h_anyday",
+        "icu_type": "mixed",
+        "age_median": _age_med,
+        "age_iqr": [_age_q1, _age_q3],
+        "pct_male": _pct_male,
+        "mortality_pct": _mortality_pct,
+        "pipeline_version": "1.0",
+        "generated_date": str(_dt.date.today()),
+    }
+
+    _out_path = f'{output_folder}sites_metadata.json'
+    with open(_out_path, 'w') as f:
+        json.dump(_metadata, f, indent=2)
+    log(f"Saved: {_out_path}")
+    log(f"  N={_metadata['n_total_encounters']}, eligible={_metadata['pct_eligible_primary']}%, "
+        f"dates={_metadata['data_start']} to {_metadata['data_end']}")
+
+    return
+
+
+@app.cell
+def _(mo):
+    mo.md(r"""
+    # Business Hours Subcomponent Failure Analysis
+    Three analyses examining the role of business hours vs clinical flags in ineligibility:
+    - **A**: Business hours as sole blocker
+    - **B**: Clinical failure reasons during business hours
+    - **C**: Absolute clinical burden during business hours
+    """)
+    return
+
+
+@app.cell
+def business_hours_failure(
+    final_df,
+    log,
+    np,
+    output_folder,
+    pd,
+    site_name,
+):
+    log("=" * 80)
+    log("BUSINESS HOURS SUBCOMPONENT FAILURE ANALYSIS")
+    log("=" * 80)
+
+    # Criteria map: criteria_name → (master_flag, all_hours_flag, individual_flags)
+    # Individual flags only (no composites). For trach/paralytics, flag=1 means "present" (bad).
+    _criteria_config = {
+        'Chicago': {
+            'master_flag': 'patel_flag',
+            'all_hours_flag': 'patel_flag_all_hours',
+            'individual_flags': ['patel_map_flag', 'patel_sbp_flag', 'patel_pulse_flag',
+                                 'patel_resp_rate_flag', 'patel_spo2_flag'],
+            'inverted_flags': ['hourly_trach', 'paralytics_flag'],  # flag=1 means failure
+        },
+        'TEAM': {
+            'master_flag': 'team_flag',
+            'all_hours_flag': 'team_flag_all_hours',
+            'individual_flags': ['team_pulse_flag', 'team_lactate_flag', 'team_ne_flag',
+                                 'team_fio2_flag', 'team_peep_flag', 'team_resp_rate_flag',
+                                 'team_spo2_flag'],
+            'inverted_flags': ['hourly_trach', 'paralytics_flag'],
+        },
+        'Yellow': {
+            'master_flag': 'any_yellow_or_green_no_red',
+            'all_hours_flag': 'any_yellow_or_green_no_red_all_hours',
+            'individual_flags': [
+                'red_resp_spo2_flag', 'red_map_flag', 'red_high_support_flag',
+                'red_hypertensive_flag', 'red_pulse_high_flag', 'red_pulse_low_flag',
+                'yellow_resp_spo2_flag', 'yellow_fio2_flag', 'yellow_resp_rate_flag',
+                'yellow_peep_flag', 'yellow_map_flag', 'yellow_pulse_flag', 'yellow_lactate_flag',
+                'green_resp_spo2_flag', 'green_resp_rate_flag', 'green_fio2_flag',
+                'green_peep_flag', 'green_map_flag', 'green_pulse_flag',
+                'green_lactate_flag', 'green_hr_flag',
+            ],
+            'inverted_flags': ['hourly_trach', 'paralytics_flag'],
+        },
+        'Green': {
+            'master_flag': 'all_green',
+            'all_hours_flag': 'all_green_all_hours',
+            'individual_flags': [
+                'green_resp_spo2_flag', 'green_resp_rate_flag', 'green_fio2_flag',
+                'green_peep_flag', 'green_map_flag', 'green_pulse_flag',
+                'green_lactate_flag', 'green_hr_flag',
+            ],
+            'inverted_flags': ['hourly_trach', 'paralytics_flag'],
+        },
+    }
+
+    def _is_flag_failing(df, flag_col, inverted_flags):
+        """Return boolean Series: True where this flag is causing failure."""
+        if flag_col in inverted_flags:
+            return df[flag_col] == 1  # trach/paralytics: present = bad
+        else:
+            return df[flag_col] == 0  # physiological: 0 = not met
+
+    _df = final_df.copy()
+    _results_a = []
+    _results_b = []
+    _results_c = []
+
+    for _crit_name, _cfg in _criteria_config.items():
+        _master = _cfg['master_flag']
+        _all_hours = _cfg['all_hours_flag']
+        _ind_flags = _cfg['individual_flags']
+        _inv_flags = _cfg['inverted_flags']
+        _all_flags = _ind_flags + _inv_flags
+
+        # Filter to flags that exist in dataframe
+        _all_flags = [f for f in _all_flags if f in _df.columns]
+        _ind_flags = [f for f in _ind_flags if f in _df.columns]
+
+        if _master not in _df.columns or _all_hours not in _df.columns:
+            log(f"  SKIP {_crit_name}: missing master or all_hours flag")
+            continue
+
+        log(f"\n--- {_crit_name} ---")
+
+        # ===== ANALYSIS A: Business hours as sole blocker =====
+        _ineligible = _df[_df[_master] == 0]
+        _n_inelig_hours = len(_ineligible)
+        # Clinically eligible (all_hours=1) but outside business hours
+        _bh_sole = _ineligible[_ineligible[_all_hours] == 1]
+        _n_bh_sole_hours = len(_bh_sole)
+        _pct_bh_sole_hours = round(_n_bh_sole_hours / _n_inelig_hours * 100, 1) if _n_inelig_hours > 0 else 0
+
+        # Per-patient: never eligible encounters that WOULD be eligible without BH
+        _enc_master_max = _df.groupby('encounter_block')[_master].max()
+        _enc_all_hours_max = _df.groupby('encounter_block')[_all_hours].max()
+        _never_eligible = _enc_master_max[_enc_master_max == 0].index
+        _n_never_eligible = len(_never_eligible)
+        _would_be = _enc_all_hours_max.loc[_never_eligible]
+        _n_would_be = int((_would_be == 1).sum())
+        _pct_would_be = round(_n_would_be / _n_never_eligible * 100, 1) if _n_never_eligible > 0 else 0
+
+        log(f"  A: {_pct_bh_sole_hours}% of ineligible hours blocked ONLY by business hours "
+            f"({_n_bh_sole_hours}/{_n_inelig_hours})")
+        log(f"     {_pct_would_be}% of never-eligible patients would be eligible without BH "
+            f"({_n_would_be}/{_n_never_eligible})")
+
+        _results_a.append({
+            'criteria': _crit_name,
+            'total_ineligible_hours': _n_inelig_hours,
+            'bh_sole_blocker_hours': _n_bh_sole_hours,
+            'pct_bh_sole_blocker_hours': _pct_bh_sole_hours,
+            'total_never_eligible_patients': _n_never_eligible,
+            'would_be_eligible_without_bh': _n_would_be,
+            'pct_bh_sole_blocker_patients': _pct_would_be,
+            'site_name': site_name,
+        })
+
+        # ===== Business hours subset (shared by B and C) =====
+        _bh = _df[(_df['recorded_hour'] >= 8) & (_df['recorded_hour'] < 17)]
+        _bh_inelig = _bh[_bh[_all_hours] == 0]  # clinically ineligible during BH
+        _n_bh_inelig_hours = len(_bh_inelig)
+        _n_bh_hours = len(_bh)
+
+        # Per-patient denominators
+        _bh_inelig_encounters = _bh_inelig['encounter_block'].unique()
+        _n_bh_inelig_enc = len(_bh_inelig_encounters)
+        _n_total_enc = _df['encounter_block'].nunique()
+
+        log(f"  Business hours: {_n_bh_hours} total, {_n_bh_inelig_hours} clinically ineligible")
+
+        # ===== ANALYSIS B: Clinical failure reasons during business hours =====
+        for _flag in _all_flags:
+            _failing_hours = _is_flag_failing(_bh_inelig, _flag, _inv_flags)
+            _n_fail_hours = int(_failing_hours.sum())
+            _pct_fail_hours = round(_n_fail_hours / _n_bh_inelig_hours * 100, 1) if _n_bh_inelig_hours > 0 else 0
+
+            # Per-patient: of encounters with BH-ineligible hours, how many had this flag fail?
+            _enc_fail = _bh_inelig[_failing_hours].groupby('encounter_block').size()
+            _n_fail_enc = len(_enc_fail)
+            _pct_fail_enc = round(_n_fail_enc / _n_bh_inelig_enc * 100, 1) if _n_bh_inelig_enc > 0 else 0
+
+            _results_b.append({
+                'criteria': _crit_name,
+                'flag': _flag,
+                'hours_failing': _n_fail_hours,
+                'pct_hours_failing': _pct_fail_hours,
+                'encounters_failing': _n_fail_enc,
+                'pct_encounters_failing': _pct_fail_enc,
+                'total_bh_ineligible_hours': _n_bh_inelig_hours,
+                'total_bh_ineligible_encounters': _n_bh_inelig_enc,
+                'site_name': site_name,
+            })
+
+        # ===== ANALYSIS C: Absolute clinical burden during business hours =====
+        for _flag in _all_flags:
+            _failing_hours = _is_flag_failing(_bh, _flag, _inv_flags)
+            _n_fail_hours = int(_failing_hours.sum())
+            _pct_fail_hours = round(_n_fail_hours / _n_bh_hours * 100, 1) if _n_bh_hours > 0 else 0
+
+            # Per-patient: of ALL encounters, how many had this flag fail during BH?
+            _enc_with_bh_fail = _bh[_failing_hours].groupby('encounter_block').size()
+            _n_enc_fail = len(_enc_with_bh_fail)
+            _pct_enc_fail = round(_n_enc_fail / _n_total_enc * 100, 1) if _n_total_enc > 0 else 0
+
+            _results_c.append({
+                'criteria': _crit_name,
+                'flag': _flag,
+                'hours_failing': _n_fail_hours,
+                'pct_hours_failing': _pct_fail_hours,
+                'encounters_with_failure': _n_enc_fail,
+                'pct_encounters_with_failure': _pct_enc_fail,
+                'total_bh_hours': _n_bh_hours,
+                'total_encounters': _n_total_enc,
+                'site_name': site_name,
+            })
+
+    # Save outputs
+    _df_a = pd.DataFrame(_results_a)
+    _df_b = pd.DataFrame(_results_b)
+    _df_c = pd.DataFrame(_results_c)
+
+    _df_a.to_csv(f'{output_folder}{site_name}_business_hours_sole_blocker.csv', index=False)
+    _df_b.to_csv(f'{output_folder}{site_name}_business_hours_failure_breakdown.csv', index=False)
+    _df_c.to_csv(f'{output_folder}{site_name}_business_hours_absolute_burden.csv', index=False)
+
+    log(f"\nSaved: {site_name}_business_hours_sole_blocker.csv ({len(_df_a)} rows)")
+    log(f"Saved: {site_name}_business_hours_failure_breakdown.csv ({len(_df_b)} rows)")
+    log(f"Saved: {site_name}_business_hours_absolute_burden.csv ({len(_df_c)} rows)")
+
     return
 
 

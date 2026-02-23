@@ -75,7 +75,6 @@ run_pipeline.bat
 ├── config/
 │   ├── config_template.json                 # Site config template
 │   └── outlier_config.json                  # Outlier thresholds
-├── app/                                     # Streamlit dashboard
 ├── run_pipeline.sh                          # Pipeline runner (macOS/Linux)
 ├── run_pipeline.bat                         # Pipeline runner (Windows)
 └── pyproject.toml                           # Python dependencies (uv)
