@@ -22,7 +22,7 @@ Returned
 Pandas DataFrame one row / id with worst components + total score.
 """
 
-import pandas as pd, numpy as np, logging, json
+import pandas as pd, numpy as np, logging, json, os
 import pyCLIF
 from typing import Optional
 
@@ -40,7 +40,8 @@ logger.setLevel(logging.INFO)
 # Outlier config file
 ##############################################################################
 
-with open('../config/outlier_config.json', 'r', encoding='utf-8') as f:
+_config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'config', 'outlier_config.json')
+with open(_config_path, 'r', encoding='utf-8') as f:
     outlier_cfg = json.load(f)
 
 

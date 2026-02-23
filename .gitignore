@@ -7,8 +7,14 @@
 .Rproj.user
 
 ## ignore the renv initialization file
-initialize_renv.R
-
+archive_2026-02-18/
+code/00_project_tour.py
+code/__pycache__/
+code/scripts/
+code/sensitivity_forest_plots.R
+output 10-03-51-584/
+output/
+rerun.md
 ## ignore filtered CLIF tables stored as Rdata
 *.RData
 
@@ -21,8 +27,9 @@ clif_*.fst
 *.pdf
 *.html
 
-# ignore the venv
+# ignore virtual environments
 .mobilization
+.venv
 
 # ignore configs
 config_mimic.json
@@ -57,6 +64,7 @@ package-lock.json
 # log files 
 *.log
 # ai files 
+.claude
 CLAUDE.md
 todo.md
 dashboard_review.md
