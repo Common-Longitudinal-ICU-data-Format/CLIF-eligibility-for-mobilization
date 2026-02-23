@@ -39,11 +39,12 @@ def imports():
     warnings.filterwarnings('ignore')
     import pyCLIF
     import sofa_score
-    import waterfall
+    from clifpy.utils.waterfall import process_resp_support_waterfall as clifpy_waterfall
     import marimo as mo
     return (
         FancyArrowPatch,
         Rectangle,
+        clifpy_waterfall,
         json,
         mo,
         np,
@@ -55,7 +56,6 @@ def imports():
         sofa_score,
         timedelta,
         warnings,
-        waterfall,
     )
 
 
@@ -319,13 +319,13 @@ def _(mo):
 
 @app.cell
 def step_c(
+    clifpy_waterfall,
     all_ids_base,
     log,
     outlier_cfg,
     pd,
     pyCLIF,
     rst_required_columns,
-    waterfall,
 ):
     log("\n=== STEP C: Load & process respiratory support => Apply Waterfall & Identify IMV usage ===\n")
 
@@ -414,7 +414,7 @@ def step_c(
     # filter all_ids_base to only those with IMV
     _all_ids = all_ids_base[all_ids_base['hospitalization_id'].isin(_resp_support_filtered['hospitalization_id'].unique())].copy()
 
-    _processed_resp_support = waterfall.process_resp_support_waterfall(
+    _processed_resp_support = clifpy_waterfall(
         _resp_support_filtered,
         id_col="hospitalization_id",
         verbose=True
