@@ -6,17 +6,27 @@ The primary objective of this project is to determine the windows of opportunity
 
 ## Required CLIF tables and fields
 
-The following tables are required:
+### Core pipeline tables
+
 1. **patient**: `patient_id`, `race_category`, `ethnicity_category`, `sex_category`, `death_dttm`
-2. **hospitalization**: `patient_id`, `hospitalization_id`, `admission_dttm`, `discharge_dttm`, `age_at_admission`
+2. **hospitalization**: `patient_id`, `hospitalization_id`, `admission_dttm`, `discharge_dttm`, `discharge_category`, `age_at_admission`
 3. **vitals**: `hospitalization_id`, `recorded_dttm`, `vital_category`, `vital_value`
    - `vital_category` = 'heart_rate', 'resp_rate', 'sbp', 'dbp', 'map', 'spo2', 'weight_kg', 'height_cm'
-4. **labs**: `hospitalization_id`, `lab_result_dttm`, `lab_category`, `lab_value`
+4. **labs**: `hospitalization_id`, `lab_result_dttm`, `lab_order_dttm`, `lab_category`, `lab_value`, `lab_value_numeric`
    - `lab_category` = 'lactate', 'creatinine', 'bilirubin_total', 'po2_arterial', 'platelet_count'
-5. **medication_admin_continuous**: `hospitalization_id`, `admin_dttm`, `med_name`, `med_category`, `med_dose`, `med_dose_unit`
+5. **medication_admin_continuous**: `hospitalization_id`, `admin_dttm`, `med_name`, `med_category`, `med_dose`, `med_dose_unit`, `med_group`
    - `med_category` = "norepinephrine", "epinephrine", "phenylephrine", "vasopressin", "dopamine", "angiotensin", "nicardipine", "nitroprusside", "clevidipine", "cisatracurium", "vecuronium", "rocuronium"
 6. **respiratory_support**: `hospitalization_id`, `recorded_dttm`, `device_category`, `mode_category`, `tracheostomy`, `fio2_set`, `lpm_set`, `resp_rate_set`, `peep_set`, `resp_rate_obs`
 7. **crrt_therapy**: `hospitalization_id`, `recorded_dttm`
+
+### ASE (Adult Sepsis Event) calculation tables
+
+8. **microbiology_culture**: `hospitalization_id`, `collect_dttm`, `fluid_category`
+   - `fluid_category` = 'blood_buffy'
+9. **medication_admin_intermittent**: `hospitalization_id`, `admin_dttm`, `med_category`, `med_route_category`, `med_group`
+   - `med_group` = 'CMS_sepsis_qualifying_antibiotics'
+10. **adt**: `hospitalization_id`, `in_dttm`, `out_dttm`, `location_category`
+11. **hospital_diagnosis**: `hospitalization_id`, `diagnosis_code`
 
 ## Cohort Identification
 
