@@ -1563,7 +1563,7 @@ def sofa_and_blocks(
         output_filepath=f"{pyCLIF.project_root}/output/intermediate/sofa.parquet"
     )
 
-    final_df_blocks = sofa_df.merge(all_ids_w_outcome, on='encounter_block', how='left')
+    final_df_blocks = all_ids_w_outcome.merge(sofa_df, on='encounter_block', how='left')
     final_df_blocks = final_df_blocks.merge(
         hospitalization[['hospitalization_id', 'admission_dttm', 'age_at_admission']],
         on='hospitalization_id', how='left'

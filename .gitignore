@@ -5,7 +5,9 @@
 .DS_Store
 *.Rproj
 .Rproj.user
-
+all_site_data/
+code/04_combine_site_results.py
+output_ucmc_feb232026/
 ## ignore the renv initialization file
 archive_2026-02-18/
 code/00_project_tour.py

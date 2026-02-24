@@ -430,17 +430,18 @@ def compute_sofa(ids_w_dttm:pd.DataFrame,
         'meds': meds_summary
     }
 
-    # Start with resp_summary as base
-    merged_df = resp_summary
+    # Start with ALL input IDs as base to avoid dropping blocks
+    # that lack resp records in the 24h SOFA window
+    all_blocks = ids[[id_col]].drop_duplicates()
+    merged_df = all_blocks
 
     # Merge each table one by one using left join
     for table_name, table in tables.items():
-        if table_name != 'resp':  # Skip resp as it's our base
-            merged_df = merged_df.merge(
-                table,
-                on=id_col,
-                how='left'
-            )
+        merged_df = merged_df.merge(
+            table,
+            on=id_col,
+            how='left'
+        )
 
     #######################################################################
     # 8. SOFA score calculation
