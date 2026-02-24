@@ -7,7 +7,7 @@ This directory contains the analysis scripts. Run via `run_pipeline.sh` (or `run
 1. `01_cohort_identification.py` — Cohort identification, STROBE diagram, hourly scaffold
 2. `02_mobilization_analysis.py` — Eligibility criteria, TableOne, failure analysis, stacked sensitivity
 3. `03_combined_analysis.R` — CIF curves, Fine-Gray SHR, stacked sensitivity CIF/SHR, federation outputs
-4. `sensitivity_forest_plots.R` — Sensitivity forest plots
+4. `04_sensitivity_forest_plots.R` — Sensitivity forest plots
 
 ### Utility modules
 
@@ -21,7 +21,7 @@ uv sync
 uv run python 01_cohort_identification.py
 uv run python 02_mobilization_analysis.py
 Rscript 03_combined_analysis.R
-Rscript sensitivity_forest_plots.R
+Rscript 04_sensitivity_forest_plots.R
 ```
 
 Upload results from `output/final/` to the project box folder.

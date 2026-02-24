@@ -6,7 +6,7 @@
 #    1. Python  01_cohort_identification.py   (cohort + STROBE)
 #    2. Python  02_mobilization_analysis.py   (criteria, tables, sensitivity)
 #    3. R       03_combined_analysis.R               (CIF, Fine-Gray, forest plots)
-#    4. R       sensitivity_forest_plots.R           (sensitivity forest plots)
+#    4. R       04_sensitivity_forest_plots.R           (sensitivity forest plots)
 #
 #  Usage:  bash run_pipeline.sh
 # ════════════════════════════════════════════════════════════════════════════════
@@ -79,10 +79,10 @@ run_step "02 Mobilization Analysis"       uv run --project "${PROJECT_ROOT}" pyt
 # R steps
 if command -v Rscript >/dev/null 2>&1; then
   run_step "03 Combined R Analysis"       Rscript --vanilla 03_combined_analysis.R
-  run_step "04 Sensitivity Forest Plots"  Rscript --vanilla sensitivity_forest_plots.R
+  run_step "04 Sensitivity Forest Plots"  Rscript --vanilla 04_sensitivity_forest_plots.R
 else
   log "${YELLOW}Rscript not found — skipping R analysis.${RESET}"
-  log "${YELLOW}Run manually: cd code && Rscript 03_combined_analysis.R && Rscript sensitivity_forest_plots.R${RESET}"
+  log "${YELLOW}Run manually: cd code && Rscript 03_combined_analysis.R && Rscript 04_sensitivity_forest_plots.R${RESET}"
   FAILED_STEPS+=("03 Combined R Analysis (Rscript not found)")
   FAILED_STEPS+=("04 Sensitivity Forest Plots (Rscript not found)")
 fi
@@ -117,7 +117,7 @@ else
     log "${CYAN}     install.packages(c(\"arrow\", \"cmprsk\", \"data.table\", \"dplyr\", \"ggplot2\",${RESET}"
     log "${CYAN}                        \"tidyverse\", \"writexl\", \"jsonlite\", \"patchwork\", \"tidyr\"))${RESET}"
     log "${CYAN}     source(\"03_combined_analysis.R\")${RESET}"
-    log "${CYAN}     source(\"sensitivity_forest_plots.R\")${RESET}"
+    log "${CYAN}     source(\"04_sensitivity_forest_plots.R\")${RESET}"
     log ""
   fi
 fi

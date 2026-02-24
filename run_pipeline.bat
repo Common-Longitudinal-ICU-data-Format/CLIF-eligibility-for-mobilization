@@ -6,7 +6,7 @@ REM  Steps:
 REM    1. Python  01_cohort_identification.py   (cohort + STROBE)
 REM    2. Python  02_mobilization_analysis.py   (criteria, tables, sensitivity)
 REM    3. R       03_combined_analysis.R               (CIF, Fine-Gray, forest plots)
-REM    4. R       sensitivity_forest_plots.R           (sensitivity forest plots)
+REM    4. R       04_sensitivity_forest_plots.R           (sensitivity forest plots)
 REM
 REM  Usage:  run_pipeline.bat
 REM ════════════════════════════════════════════════════════════════════════════════
@@ -65,11 +65,11 @@ REM Step 3-4: R scripts
 where Rscript >nul 2>nul
 if errorlevel 1 (
     call :log "WARNING: Rscript not found — skipping R analysis."
-    call :log "Run manually: cd code && Rscript 03_combined_analysis.R && Rscript sensitivity_forest_plots.R"
+    call :log "Run manually: cd code && Rscript 03_combined_analysis.R && Rscript 04_sensitivity_forest_plots.R"
     set /a FAILED_COUNT+=2
 ) else (
     call :run_step "03 Combined R Analysis" Rscript --vanilla 03_combined_analysis.R
-    call :run_step "04 Sensitivity Forest Plots" Rscript --vanilla sensitivity_forest_plots.R
+    call :run_step "04 Sensitivity Forest Plots" Rscript --vanilla 04_sensitivity_forest_plots.R
 )
 
 REM ── summary ──────────────────────────────────────────────────────────────────
@@ -92,7 +92,7 @@ if %FAILED_COUNT% equ 0 (
     call :log "     install.packages(c('arrow', 'cmprsk', 'data.table', 'dplyr', 'ggplot2',"
     call :log "                        'tidyverse', 'writexl', 'jsonlite', 'patchwork', 'tidyr'))"
     call :log "     source('03_combined_analysis.R')"
-    call :log "     source('sensitivity_forest_plots.R')"
+    call :log "     source('04_sensitivity_forest_plots.R')"
     call :log ""
 )
 

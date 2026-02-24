@@ -6,7 +6,7 @@
 *.Rproj
 .Rproj.user
 all_site_data/
-code/04_combine_site_results.py
+code/05_combine_site_results.py
 output_ucmc_feb232026/
 ## ignore the renv initialization file
 archive_2026-02-18/
