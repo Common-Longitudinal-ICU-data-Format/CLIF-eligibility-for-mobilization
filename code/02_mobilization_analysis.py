@@ -124,45 +124,42 @@ def _(mo):
 
 @app.cell
 def missingness_helpers(np, pd, plt, sns):
+    # One representative column per logical variable: {col: (label, source)}
     ANALYSIS_VARIABLES = {
-        # Respiratory support
-        'min_fio2_set': 'FiO2 (min)', 'max_fio2_set': 'FiO2 (max)',
-        'min_peep_set': 'PEEP (min)', 'max_peep_set': 'PEEP (max)',
-        'min_lpm_set': 'LPM (min)', 'max_lpm_set': 'LPM (max)',
-        'min_resp_rate_obs': 'Resp Rate Obs (min)', 'max_resp_rate_obs': 'Resp Rate Obs (max)',
+        # Respiratory Support
+        'max_fio2_set':              ('FiO2',               'Respiratory Support'),
+        'max_peep_set':              ('PEEP',               'Respiratory Support'),
+        'max_lpm_set':               ('LPM',                'Respiratory Support'),
+        'max_resp_rate_obs':         ('Resp Rate Observed',  'Respiratory Support'),
         # Vitals
-        'avg_map': 'MAP (avg)', 'min_map': 'MAP (min)', 'max_map': 'MAP (max)',
-        'avg_sbp': 'SBP (avg)', 'min_sbp': 'SBP (min)', 'max_sbp': 'SBP (max)',
-        'avg_dbp': 'DBP (avg)', 'min_dbp': 'DBP (min)', 'max_dbp': 'DBP (max)',
-        'avg_heart_rate': 'Heart Rate (avg)', 'min_heart_rate': 'Heart Rate (min)', 'max_heart_rate': 'Heart Rate (max)',
-        'avg_respiratory_rate': 'Resp Rate (avg)', 'min_respiratory_rate': 'Resp Rate (min)', 'max_respiratory_rate': 'Resp Rate (max)',
-        'avg_spo2': 'SpO2 (avg)', 'min_spo2': 'SpO2 (min)', 'max_spo2': 'SpO2 (max)',
-        'avg_height_cm': 'Height (avg)', 'max_height_cm': 'Height (max)', 'min_height_cm': 'Height (min)',
-        'avg_weight_kg': 'Weight (avg)', 'max_weight_kg': 'Weight (max)', 'min_weight_kg': 'Weight (min)',
+        'avg_map':                   ('MAP',                'Vitals'),
+        'avg_sbp':                   ('SBP',                'Vitals'),
+        'avg_dbp':                   ('DBP',                'Vitals'),
+        'avg_heart_rate':            ('Heart Rate',         'Vitals'),
+        'avg_respiratory_rate':      ('Respiratory Rate',   'Vitals'),
+        'avg_spo2':                  ('SpO2',               'Vitals'),
+        'avg_height_cm':             ('Height',             'Vitals'),
+        'avg_weight_kg':             ('Weight',             'Vitals'),
         # Medications
-        'ne_calc_min': 'NE Equiv (min)', 'ne_calc_max': 'NE Equiv (max)',
-        'ne_calc_first': 'NE Equiv (first)', 'ne_calc_last': 'NE Equiv (last)',
-        'last_ne_dose_last_6_hours': 'NE Dose (6h lookback)',
-        # Labs
-        'lactate': 'Lactate',
+        'ne_calc_max':               ('NE Equivalent Dose', 'Medications'),
+        'last_ne_dose_last_6_hours': ('NE Dose (6h lookback)', 'Medications'),
+        # Labs (hourly)
+        'lactate':                   ('Lactate',            'Labs'),
     }
 
-    _VARIABLE_SOURCE = {}
-    for _v in ['min_fio2_set', 'max_fio2_set', 'min_peep_set', 'max_peep_set',
-               'min_lpm_set', 'max_lpm_set', 'min_resp_rate_obs', 'max_resp_rate_obs']:
-        _VARIABLE_SOURCE[_v] = 'Respiratory Support'
-    for _v in ['avg_map', 'min_map', 'max_map', 'avg_sbp', 'min_sbp', 'max_sbp',
-               'avg_dbp', 'min_dbp', 'max_dbp', 'avg_heart_rate', 'min_heart_rate', 'max_heart_rate',
-               'avg_respiratory_rate', 'min_respiratory_rate', 'max_respiratory_rate',
-               'avg_spo2', 'min_spo2', 'max_spo2', 'avg_height_cm', 'max_height_cm', 'min_height_cm',
-               'avg_weight_kg', 'max_weight_kg', 'min_weight_kg']:
-        _VARIABLE_SOURCE[_v] = 'Vitals'
-    for _v in ['ne_calc_min', 'ne_calc_max', 'ne_calc_first', 'ne_calc_last', 'last_ne_dose_last_6_hours']:
-        _VARIABLE_SOURCE[_v] = 'Medications'
-    _VARIABLE_SOURCE['lactate'] = 'Labs'
+    # Block-level variables from SOFA (24h window, one value per encounter)
+    BLOCK_LEVEL_VARIABLES = {
+        'po2_arterial_min':    ('PO2 Arterial',   'Labs (SOFA)'),
+        'creatinine_max':      ('Creatinine',      'Labs (SOFA)'),
+        'bilirubin_total_max': ('Bilirubin Total', 'Labs (SOFA)'),
+        'platelet_count_min':  ('Platelet Count',  'Labs (SOFA)'),
+        'min_gcs_score':       ('GCS',             'Assessments (SOFA)'),
+    }
 
     def calculate_patient_missingness(df, variables_dict):
-        """Binary patient-level missingness."""
+        """Binary patient-level missingness.
+        variables_dict: {col_name: (label, source)} or {col_name: label}
+        """
         _vars_to_check = [v for v in variables_dict if v in df.columns]
         _has_any_data = (
             df[_vars_to_check]
@@ -173,14 +170,21 @@ def missingness_helpers(np, pd, plt, sns):
         )
         return _has_any_data
 
+    def calculate_block_missingness(blocks_df, variables_dict):
+        """Block-level missingness (one row per encounter_block already)."""
+        _vars_to_check = [v for v in variables_dict if v in blocks_df.columns]
+        _has_any_data = blocks_df.set_index('encounter_block')[_vars_to_check].notna().astype(np.int8)
+        return _has_any_data
+
     def generate_missingness_summary(has_data_df, variables_dict, sname):
+        """variables_dict: {col_name: (label, source)}"""
         _n_patients = len(has_data_df)
         _n_with = has_data_df.sum()
         _n_without = _n_patients - _n_with
         _stats = pd.DataFrame({
             'variable': has_data_df.columns,
-            'variable_label': [variables_dict.get(v, v) for v in has_data_df.columns],
-            'source_table': [_VARIABLE_SOURCE.get(v, '') for v in has_data_df.columns],
+            'variable_label': [variables_dict[v][0] if isinstance(variables_dict.get(v), tuple) else variables_dict.get(v, v) for v in has_data_df.columns],
+            'source_table': [variables_dict[v][1] if isinstance(variables_dict.get(v), tuple) else '' for v in has_data_df.columns],
             'n_patients_with_data': _n_with.values.astype(int),
             'pct_patients_with_data': (_n_with.values / _n_patients * 100),
             'n_patients_no_data': _n_without.values.astype(int),
@@ -227,6 +231,8 @@ def missingness_helpers(np, pd, plt, sns):
 
     return (
         ANALYSIS_VARIABLES,
+        BLOCK_LEVEL_VARIABLES,
+        calculate_block_missingness,
         calculate_patient_missingness,
         check_missingness_by_variable,
         generate_missingness_summary,
@@ -237,13 +243,17 @@ def missingness_helpers(np, pd, plt, sns):
 @app.cell
 def pre_fill_missingness(
     ANALYSIS_VARIABLES,
+    BLOCK_LEVEL_VARIABLES,
+    calculate_block_missingness,
     calculate_patient_missingness,
     datetime,
+    final_df_blocks_raw,
     final_df_raw,
     generate_missingness_summary,
     graphs_folder,
     log,
     output_folder,
+    pd,
     plot_missingness_heatmap,
     site_name,
 ):
@@ -256,20 +266,30 @@ def pre_fill_missingness(
     _df = final_df_raw.copy()
     log(f"\nShape of final_df: {_df.shape}")
 
-    # --- 72h window ---
+    # --- 72h window (hourly variables) ---
     _df_72h = _df[_df['time_from_vent'] <= 72].copy()
     _n_patients_72h = _df_72h['encounter_block'].nunique()
     log(f"\n72h window: {_n_patients_72h:,} patients, {len(_df_72h):,} patient-hours")
 
     _has_data_72h = calculate_patient_missingness(_df_72h, ANALYSIS_VARIABLES)
-    _summary_72h_before = generate_missingness_summary(_has_data_72h, ANALYSIS_VARIABLES, site_name)
+    _summary_72h_hourly = generate_missingness_summary(_has_data_72h, ANALYSIS_VARIABLES, site_name)
 
-    # --- All hours ---
+    # --- Block-level variables (SOFA labs, GCS) ---
+    _has_data_blocks = calculate_block_missingness(final_df_blocks_raw, BLOCK_LEVEL_VARIABLES)
+    _summary_blocks = generate_missingness_summary(_has_data_blocks, BLOCK_LEVEL_VARIABLES, site_name)
+
+    # Combine hourly + block-level into one summary
+    _summary_72h_before = pd.concat([_summary_72h_hourly, _summary_blocks], ignore_index=True)
+    _summary_72h_before = _summary_72h_before.sort_values('pct_patients_no_data', ascending=False).reset_index(drop=True)
+
+    # --- All hours (hourly variables only) ---
     _n_patients_all = _df['encounter_block'].nunique()
     log(f"All hours: {_n_patients_all:,} patients, {len(_df):,} patient-hours")
 
     _has_data_all = calculate_patient_missingness(_df, ANALYSIS_VARIABLES)
-    _summary_all_before = generate_missingness_summary(_has_data_all, ANALYSIS_VARIABLES, site_name)
+    _summary_all_hourly = generate_missingness_summary(_has_data_all, ANALYSIS_VARIABLES, site_name)
+    _summary_all_before = pd.concat([_summary_all_hourly, _summary_blocks], ignore_index=True)
+    _summary_all_before = _summary_all_before.sort_values('pct_patients_no_data', ascending=False).reset_index(drop=True)
 
     # Print top missing (72h)
     log("\nVariables with highest % patients having NO data (72h):")
@@ -1487,12 +1507,10 @@ def ase_sepsis(all_ids_w_outcome, final_df_blocks_raw, log, pd, pyCLIF):
         ).dt.total_seconds() / 3600
         _sepsis_with_block['sepsis_24h'] = (
             (_sepsis_with_block['sepsis'] == 1) &
-            (_sepsis_with_block['hours_from_vent_to_sepsis'] >= 0) &
             (_sepsis_with_block['hours_from_vent_to_sepsis'] <= 24)
         ).astype(int)
         _sepsis_with_block['sepsis_72h'] = (
             (_sepsis_with_block['sepsis'] == 1) &
-            (_sepsis_with_block['hours_from_vent_to_sepsis'] >= 0) &
             (_sepsis_with_block['hours_from_vent_to_sepsis'] <= 72)
         ).astype(int)
         _sepsis_with_block['sepsis_anytime'] = _sepsis_with_block['sepsis']
@@ -1509,8 +1527,8 @@ def ase_sepsis(all_ids_w_outcome, final_df_blocks_raw, log, pd, pyCLIF):
         _n24 = _sepsis_by_block['block_sepsis_24h'].sum()
         _n72 = _sepsis_by_block['block_sepsis_72h'].sum()
         _nany = _sepsis_by_block['block_sepsis_anytime'].sum()
-        log(f"\nSepsis within 24h: {_n24} ({_n24/_total_blocks*100:.1f}%)")
-        log(f"Sepsis within 72h: {_n72} ({_n72/_total_blocks*100:.1f}%)")
+        log(f"\nSepsis by 24h: {_n24} ({_n24/_total_blocks*100:.1f}%)")
+        log(f"Sepsis by 72h: {_n72} ({_n72/_total_blocks*100:.1f}%)")
         log(f"Sepsis anytime:    {_nany} ({_nany/_total_blocks*100:.1f}%)")
         assert _n24 <= _n72 <= _nany, "Sepsis counts should be monotonic: 24h <= 72h <= anytime"
 
@@ -1676,12 +1694,16 @@ def tableone_72h(TableOne, final_df, final_df_blocks, log, pd, pyCLIF):
         _vaso_rows.append(_row_data)
     _final_table = pd.concat([_final_table, pd.DataFrame(_vaso_rows)], ignore_index=True)
 
-    # --- n row + save ---
+    # --- n (encounter blocks) and n_patients (unique patients) rows + save ---
     _n_row = pd.DataFrame({
         'Characteristics': ['n'], 'Category': [''],
         **{_col: [str(len(_subsets[_col]))] for _col in _final_table.columns[2:] if _col in _subsets}
     })
-    _final_table = pd.concat([_n_row, _final_table]).reset_index(drop=True)
+    _n_patients_row = pd.DataFrame({
+        'Characteristics': ['n_patients'], 'Category': [''],
+        **{_col: [str(_subsets[_col]['patient_id'].nunique())] for _col in _final_table.columns[2:] if _col in _subsets}
+    })
+    _final_table = pd.concat([_n_row, _n_patients_row, _final_table]).reset_index(drop=True)
     _final_table.to_csv(f'{pyCLIF.project_root}/output/final/table1_results.csv', index=False)
     log("[SAVED] table1_results.csv")
 
@@ -1697,6 +1719,15 @@ def tableone_72h(TableOne, final_df, final_df_blocks, log, pd, pyCLIF):
         log("PASS: STROBE and TableOne counts match.")
     else:
         log(f"MISMATCH: STROBE={_strobe_final}, TableOne={_tableone_n}, diff={_strobe_final - _tableone_n}")
+
+    # --- Death dedup validation ---
+    _dead_blocks = _all_encounters[_all_encounters['is_dead'] == 1]
+    _dead_patients = _dead_blocks['patient_id'].nunique()
+    _dead_blocks_n = len(_dead_blocks)
+    if _dead_blocks_n != _dead_patients:
+        log(f"WARNING: {_dead_blocks_n} blocks flagged is_dead=1 but only {_dead_patients} unique patients — possible double-count!")
+    else:
+        log(f"PASS: Death count validated — {_dead_patients} deaths across {_dead_blocks_n} blocks (1:1).")
 
     log("\n[OK] TableOne completed!")
     t1_72h_done = True
