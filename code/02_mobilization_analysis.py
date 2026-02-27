@@ -1341,10 +1341,11 @@ def extubation_curve(
         for _d, _c in _disp_summary.items():
             log(f"    {_d}: {_c} ({_c/len(_discharged_alive)*100:.1f}%)")
         _disp_flag_cols = [f'discharged_{d}' for d in _disp_types]
+        _INTERMEDIATE_DIR = _OUTPUT_DIR.replace('/final/', '/intermediate/')
         _discharged_alive[['encounter_block', 'discharge_category', 'discharge_disposition'] + _disp_flag_cols].to_csv(
-            f'{_OUTPUT_DIR}{site_name}_discharge_disposition.csv', index=False
+            f'{_INTERMEDIATE_DIR}{site_name}_discharge_disposition.csv', index=False
         )
-        log(f"Saved: {site_name}_discharge_disposition.csv")
+        log(f"Saved (intermediate): {site_name}_discharge_disposition.csv")
     else:
         log("  WARNING: discharge_category column not found in all_ids_w_outcome")
 
@@ -2339,7 +2340,9 @@ def enhanced_failure(
                 _prim.append([_blk, _pb, _pt])
             _prim_df = pd.DataFrame(_prim, columns=[id_col, "primary_blocker", "time_to_first_true"])
             if save_fig_data:
-                _prim_df.to_csv(_out_dir / "primary_blockers_by_encounter.csv", index=False)
+                _int_dir = Path(str(_out_dir).replace('/final/', '/intermediate/'))
+                _int_dir.mkdir(parents=True, exist_ok=True)
+                _prim_df.to_csv(_int_dir / "primary_blockers_by_encounter.csv", index=False)
                 _blocker_counts = _prim_df['primary_blocker'].value_counts()
                 pd.DataFrame({'primary_blocker': _blocker_counts.index, 'encounter_count': _blocker_counts.values,
                                'proportion': _blocker_counts.values / len(_prim_df),
@@ -2391,7 +2394,9 @@ def enhanced_failure(
                 _bh = _fail_copy.groupby(id_col).agg({'is_business_hours': ['sum', 'count', 'mean']}).round(3)
                 _bh.columns = ['business_hours_count', 'total_hours', 'business_hours_proportion']
                 if save_fig_data:
-                    _bh.to_csv(_out_dir / "business_hours_by_encounter.csv")
+                    _int_dir_bh = Path(str(_out_dir).replace('/final/', '/intermediate/'))
+                    _int_dir_bh.mkdir(parents=True, exist_ok=True)
+                    _bh.to_csv(_int_dir_bh / "business_hours_by_encounter.csv")
             if 'hourly_trach' in _fail.columns:
                 _trach = _fail.groupby(id_col)['hourly_trach'].max()
                 pd.DataFrame([{'encounters_with_trach': (_trach == 1).sum(),
