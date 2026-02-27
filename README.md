@@ -6,6 +6,8 @@ The primary objective of this project is to determine the windows of opportunity
 
 ## Required CLIF tables and fields
 
+Version: CLIF-2.1
+
 ### Core pipeline tables
 
 1. **patient**: `patient_id`, `race_category`, `ethnicity_category`, `sex_category`, `death_dttm`
