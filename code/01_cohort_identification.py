@@ -914,6 +914,23 @@ def birth_final_df(
     _death_before_vitals_df = all_ids_w_outcome[_mask_death_before_vitals][['patient_id', 'hospitalization_id', 'encounter_block', 'death_dttm', 'block_last_vital_dttm', 'final_outcome_dttm']]
     _death_before_vitals_df['diff_hour'] = (_death_before_vitals_df['death_dttm'] - _death_before_vitals_df['block_last_vital_dttm']).dt.total_seconds() / 3600
 
+    # --- Sanity check: each patient should die at most once ---
+    _deaths_per_patient = all_ids_w_outcome[all_ids_w_outcome['is_dead'] == 1].groupby('patient_id')['encounter_block'].nunique()
+    _multi_death = _deaths_per_patient[_deaths_per_patient > 1]
+    if len(_multi_death) > 0:
+        log(f"WARNING: {len(_multi_death)} patients have is_dead=1 on multiple encounter blocks!")
+        log(f"  Patient IDs: {_multi_death.index.tolist()[:10]}{'...' if len(_multi_death) > 10 else ''}")
+        # Keep is_dead=1 only on the LAST block (by vent start) for patients with multiple dead blocks
+        for _pid in _multi_death.index:
+            _mask = (all_ids_w_outcome['patient_id'] == _pid) & (all_ids_w_outcome['is_dead'] == 1)
+            _rows = all_ids_w_outcome.loc[_mask].sort_values('block_vent_start_dttm')
+            # Zero out all but the last block
+            _to_zero = _rows.index[:-1]
+            all_ids_w_outcome.loc[_to_zero, 'is_dead'] = 0
+        log(f"  Fixed: kept is_dead=1 only on last block per patient.")
+    else:
+        log("PASS: No patient has is_dead=1 on multiple encounter blocks.")
+
     for _col in all_ids_w_outcome.columns[:3]:
         log(f"\n{_col}:")
         log(all_ids_w_outcome[_col].nunique())
