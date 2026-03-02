@@ -1319,19 +1319,19 @@ def extubation_curve(
     log("DISCHARGE DISPOSITION FLAGS")
     log("=" * 80)
     _discharge_mapping = {
-        'Home': 'home', 'Home or Self Care': 'home', 'Home Health': 'home',
-        'Skilled Nursing Facility (SNF)': 'snf', 'Skilled Nursing Facility': 'snf', 'SNF': 'snf',
-        'Acute Inpatient Rehab Facility': 'rehab', 'Rehab': 'rehab', 'Rehabilitation': 'rehab',
-        'Long Term Care Hospital (LTACH)': 'ltac', 'Long Term Care': 'ltc', 'LTAC': 'ltac', 'LTACH': 'ltac',
-        'Against Medical Advice (AMA)': 'ama', 'Against Medical Advice': 'ama', 'AMA': 'ama',
-        'Acute Care Hospital': 'transfer', 'Another Hospital': 'transfer', 'Transfer': 'transfer',
-        'Psychiatric Hospital': 'psych', 'Hospice': 'hospice', 'Expired': 'expired',
-        'Jail': 'other', 'Other': 'other', 'Still Admitted': 'other',
+        'home': 'home', 'home or self care': 'home', 'home health': 'home',
+        'skilled nursing facility (snf)': 'snf', 'skilled nursing facility': 'snf', 'snf': 'snf',
+        'acute inpatient rehab facility': 'rehab', 'rehab': 'rehab', 'rehabilitation': 'rehab',
+        'long term care hospital (ltach)': 'ltac', 'long term care': 'ltc', 'ltac': 'ltac', 'ltach': 'ltac',
+        'against medical advice (ama)': 'ama', 'against medical advice': 'ama', 'ama': 'ama',
+        'acute care hospital': 'transfer', 'another hospital': 'transfer', 'transfer': 'transfer',
+        'psychiatric hospital': 'psych', 'hospice': 'hospice', 'expired': 'expired',
+        'jail': 'other', 'other': 'other', 'still admitted': 'other',
     }
     _discharged_alive = all_ids_w_outcome[all_ids_w_outcome['is_dead'] != 1].copy()
     if 'discharge_category' in _discharged_alive.columns:
         _discharged_alive['discharge_disposition'] = _discharged_alive['discharge_category'].map(
-            lambda x: _discharge_mapping.get(str(x).strip(), 'other') if pd.notna(x) else 'unknown'
+            lambda x: _discharge_mapping.get(str(x).strip().lower(), 'other') if pd.notna(x) else 'unknown'
         )
         _disp_types = ['home', 'snf', 'rehab', 'ltac', 'ama', 'transfer', 'psych', 'hospice', 'other']
         for _disp in _disp_types:
@@ -2982,7 +2982,7 @@ def sites_metadata(
     _age_q3 = float(_demo['age_at_admission'].quantile(0.75)) if 'age_at_admission' in _demo.columns else None
     _pct_male = None
     if 'sex_category' in _demo.columns:
-        _pct_male = round((_demo['sex_category'] == 'Male').sum() / len(_demo) * 100, 1)
+        _pct_male = round((_demo['sex_category'].str.lower() == 'male').sum() / len(_demo) * 100, 1)
 
     # Mortality from all_ids_w_outcome (always has is_dead)
     _mortality_pct = round(all_ids_w_outcome['is_dead'].mean() * 100, 1) if 'is_dead' in all_ids_w_outcome.columns else None
