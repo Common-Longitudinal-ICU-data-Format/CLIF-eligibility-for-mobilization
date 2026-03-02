@@ -1584,10 +1584,10 @@ def tableone_72h(TableOne, final_df, final_df_blocks, log, pd, pyCLIF):
 
     # --- helpers ---
     def _map_race(df, race_column='race_category'):
-        _rm = {'Black or African-American': 'Black', 'Black or African American': 'Black',
-               'White': 'White', 'Asian': 'Other', 'American Indian or Alaska Native': 'Other',
-               'Native Hawaiian or Other Pacific Islander': 'Other', 'Other': 'Other', 'Unknown': 'Other'}
-        df['race_new'] = df[race_column].map(_rm).fillna('Missing')
+        _rm = {'black or african-american': 'Black', 'black or african american': 'Black',
+               'white': 'White', 'asian': 'Other', 'american indian or alaska native': 'Other',
+               'native hawaiian or other pacific islander': 'Other', 'other': 'Other', 'unknown': 'Other'}
+        df['race_new'] = df[race_column].str.lower().map(_rm).fillna('Missing')
         return df
 
     def _calc_vaso(df):

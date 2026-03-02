@@ -209,18 +209,18 @@ def map_race_column(df, race_column='race'):
     """
     # Define the mapping
     race_mapping = {
-        'Black or African-American': 'Black',
-        'Black or African American': 'Black',
-        'White': 'White',
-        'Asian': 'Other',
-        'American Indian or Alaska Native': 'Other',
-        'Native Hawaiian or Other Pacific Islander': 'Other',
-        'Other': 'Other',
-        'Unknown': 'Other'
+        'black or african-american': 'Black',
+        'black or african american': 'Black',
+        'white': 'White',
+        'asian': 'Other',
+        'american indian or alaska native': 'Other',
+        'native hawaiian or other pacific islander': 'Other',
+        'other': 'Other',
+        'unknown': 'Other'
     }
 
-    # Apply the mapping to create a new 'race_new' column
-    df['race_new'] = df[race_column].map(race_mapping).fillna('Missing')
+    # Normalize to lowercase before mapping (some sites store different cases)
+    df['race_new'] = df[race_column].str.lower().map(race_mapping).fillna('Missing')
 
     return df
 
