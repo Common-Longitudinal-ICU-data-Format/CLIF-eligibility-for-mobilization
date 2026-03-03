@@ -33,6 +33,7 @@ def imports():
     import sys
     import shutil
     from datetime import datetime, timedelta
+    import gc
     import json
     import pyarrow
     import warnings
@@ -45,6 +46,7 @@ def imports():
         FancyArrowPatch,
         Rectangle,
         RespiratorySupport,
+        gc,
         json,
         mo,
         np,
@@ -1022,6 +1024,7 @@ def vitals_merge(
     all_ids_w_outcome,
     all_ids_vent,
     final_df_base,
+    gc,
     log,
     np,
     pd,
@@ -1074,12 +1077,24 @@ def vitals_merge(
         max_val=('vital_value', 'max'),
         avg_val=('vital_value', 'mean')
     ).reset_index()
+    del _vitals_stitched; gc.collect()
 
-    _vitals_pivot = _vitals_min_max.pivot_table(
-        index=['encounter_block', 'recorded_date', 'recorded_hour'],
-        columns='vital_category',
-        values=['min_val', 'max_val', 'avg_val']
-    ).reset_index()
+    # Chunked pivot to avoid OOM on 32GB machines
+    _CHUNK = 500  # encounter_blocks per batch
+    _blocks = _vitals_min_max['encounter_block'].unique()
+    _chunks = [_blocks[i:i + _CHUNK] for i in range(0, len(_blocks), _CHUNK)]
+    _pivot_parts = []
+    for _blk_chunk in _chunks:
+        _part = _vitals_min_max[_vitals_min_max['encounter_block'].isin(_blk_chunk)]
+        _pivot_parts.append(
+            _part.pivot_table(
+                index=['encounter_block', 'recorded_date', 'recorded_hour'],
+                columns='vital_category',
+                values=['min_val', 'max_val', 'avg_val']
+            ).reset_index()
+        )
+    _vitals_pivot = pd.concat(_pivot_parts, ignore_index=True)
+    del _vitals_min_max, _pivot_parts; gc.collect()
 
     _vitals_pivot.columns = [
         '_'.join(col).rstrip('_') if isinstance(col, tuple) else col
@@ -1139,6 +1154,7 @@ def _(mo):
 def meds_merge(
     all_ids_final,
     final_df_v,
+    gc,
     log,
     meds_of_interest,
     meds_required_columns,
@@ -1258,19 +1274,16 @@ def meds_merge(
     _group_cols = ['encounter_block', 'recorded_date', 'recorded_hour', 'med_category']
     _dose_agg = _ne_df.groupby(_group_cols)['med_dose_converted'].agg(['min', 'max', 'first', 'last']).reset_index()
 
-    _dose_pivot_min = _dose_agg.pivot_table(index=['encounter_block', 'recorded_date', 'recorded_hour'], columns='med_category', values='min').reset_index()
-    _dose_pivot_max = _dose_agg.pivot_table(index=['encounter_block', 'recorded_date', 'recorded_hour'], columns='med_category', values='max').reset_index()
-    _dose_pivot_first = _dose_agg.pivot_table(index=['encounter_block', 'recorded_date', 'recorded_hour'], columns='med_category', values='first').reset_index()
-    _dose_pivot_last = _dose_agg.pivot_table(index=['encounter_block', 'recorded_date', 'recorded_hour'], columns='med_category', values='last').reset_index()
-
-    _dose_pivot_min.columns = ['encounter_block', 'recorded_date', 'recorded_hour'] + ['min_' + col for col in _dose_pivot_min.columns if col not in ['encounter_block', 'recorded_date', 'recorded_hour']]
-    _dose_pivot_max.columns = ['encounter_block', 'recorded_date', 'recorded_hour'] + ['max_' + col for col in _dose_pivot_max.columns if col not in ['encounter_block', 'recorded_date', 'recorded_hour']]
-    _dose_pivot_first.columns = ['encounter_block', 'recorded_date', 'recorded_hour'] + ['first_' + col for col in _dose_pivot_first.columns if col not in ['encounter_block', 'recorded_date', 'recorded_hour']]
-    _dose_pivot_last.columns = ['encounter_block', 'recorded_date', 'recorded_hour'] + ['last_' + col for col in _dose_pivot_last.columns if col not in ['encounter_block', 'recorded_date', 'recorded_hour']]
-
-    _dose_pivot = pyCLIF.merge_multiple_dfs(_dose_pivot_min, _dose_pivot_max, _dose_pivot_first, _dose_pivot_last,
-                                            on=['encounter_block', 'recorded_date', 'recorded_hour'],
-                                            how='outer')
+    _dose_pivot = _dose_agg.pivot_table(
+        index=['encounter_block', 'recorded_date', 'recorded_hour'],
+        columns='med_category',
+        values=['min', 'max', 'first', 'last']
+    ).reset_index()
+    _dose_pivot.columns = [
+        '_'.join(col).rstrip('_') if isinstance(col, tuple) else col
+        for col in _dose_pivot.columns
+    ]
+    del _dose_agg; gc.collect()
 
     _dose_pivot.fillna(0, inplace=True)
 
@@ -1331,6 +1344,7 @@ def meds_merge(
         timestamp_col="admin_dttm",
         site_tz=pyCLIF.helper['timezone']
     )
+    del _ne_df; gc.collect()
 
     _ne_calc_df = _ne_calc_df.sort_values(by=['encounter_block', 'recorded_date', 'recorded_hour'])
     _hourly_ne_merged = pd.merge(
