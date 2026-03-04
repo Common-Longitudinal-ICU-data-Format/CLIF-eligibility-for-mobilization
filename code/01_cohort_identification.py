@@ -426,7 +426,7 @@ def step_c(
     # _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
     _waterfall_path = f'{pyCLIF.project_root}/waterfall/processed_resp_support.parquet'
     if os.path.exists(_waterfall_path):
-        _processed_resp_support = pd.read_parquet(waterfall_path)
+        _processed_resp_support = pd.read_parquet(_waterfall_path)
         _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
     else:
         _rs = RespiratorySupport(data=_resp_support_filtered)
