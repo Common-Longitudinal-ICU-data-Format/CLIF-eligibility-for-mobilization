@@ -424,9 +424,8 @@ def step_c(
     # # Re-convert after waterfall (waterfall preserves input tz; idempotent if already correct)
     # _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
     # _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
-    import os
-    waterfall_path = f'{pyCLIF.project_root}/waterfall/processed_resp_support.parquet'
-    if os.path.exists(waterfall_path):
+    _waterfall_path = f'{pyCLIF.project_root}/waterfall/processed_resp_support.parquet'
+    if os.path.exists(_waterfall_path):
         _processed_resp_support = pd.read_parquet(waterfall_path)
         _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
     else:
