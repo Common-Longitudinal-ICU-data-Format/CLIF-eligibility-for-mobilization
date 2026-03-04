@@ -132,4 +132,19 @@ Initial implementation.
 - Fixed combination analysis pandas compat error (`only 0-dimensional arrays can be converted to Python scalars`).
 - Vectorized `_pick_outcome` in `create_competing_risk_dataset` — replaced `.apply()` with `np.where()`.
 - BMI 30-day time window constraint added.
+
+---
+
+## Version 13 – March 3, 2026
+
+### Memory optimization for 32GB machines
+
+Sites with ≤32GB RAM hit an OOM error during the vitals pivot in `01_cohort_identification.py`. Three changes reduce peak memory usage — **no logic or output changes**.
+
+1. **Chunked vitals pivot** — instead of pivoting the entire `_vitals_min_max` DataFrame at once (which creates a large dense intermediate), the pivot now processes 500 encounter_blocks per batch and concatenates the results. `_vitals_stitched` is freed immediately after aggregation.
+
+2. **Consolidated med pivot** — replaced 4 separate `pivot_table` calls (min/max/first/last) + a 4-way merge with a single `pivot_table` over all 4 value columns. Produces identical column names (`min_norepinephrine`, `max_norepinephrine`, etc.).
+
+3. **Explicit memory cleanup** — added `del` + `gc.collect()` calls after large intermediates (`_vitals_stitched`, `_vitals_min_max`, `_dose_agg`, `_ne_df`) are no longer needed.
+
 ---

@@ -419,11 +419,22 @@ def step_c(
     # Convert to site tz BEFORE waterfall (handles naive Databricks exports + UTC parquet)
     _resp_support_filtered = pyCLIF.convert_datetime_columns_to_site_tz(_resp_support_filtered, pyCLIF.helper['timezone'])
 
-    _rs = RespiratorySupport(data=_resp_support_filtered)
-    _processed_resp_support = _rs.waterfall(id_col="hospitalization_id", verbose=True, return_dataframe=True)
-    # Re-convert after waterfall (waterfall preserves input tz; idempotent if already correct)
-    _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
-    _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
+    # _rs = RespiratorySupport(data=_resp_support_filtered)
+    # _processed_resp_support = _rs.waterfall(id_col="hospitalization_id", verbose=True, return_dataframe=True)
+    # # Re-convert after waterfall (waterfall preserves input tz; idempotent if already correct)
+    # _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
+    # _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
+    import os
+    waterfall_path = f'{pyCLIF.project_root}/waterfall/processed_resp_support.parquet'
+    if os.path.exists(waterfall_path):
+        _processed_resp_support = pd.read_parquet(waterfall_path)
+        _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
+    else:
+        _rs = RespiratorySupport(data=_resp_support_filtered)
+        _processed_resp_support = _rs.waterfall(id_col="hospitalization_id", verbose=True, return_dataframe=True)
+        # Re-convert after waterfall (waterfall preserves input tz; idempotent if already correct)
+        _processed_resp_support = pyCLIF.convert_datetime_columns_to_site_tz(_processed_resp_support, pyCLIF.helper['timezone'])
+        _processed_resp_support.to_parquet(f'{pyCLIF.project_root}/output/intermediate/processed_resp_support.parquet', index=False)
     
     # Merge to get encounter_block
     _resp_stitched = _processed_resp_support.merge(
