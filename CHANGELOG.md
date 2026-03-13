@@ -133,11 +133,9 @@ Initial implementation.
 - Vectorized `_pick_outcome` in `create_competing_risk_dataset` — replaced `.apply()` with `np.where()`.
 - BMI 30-day time window constraint added.
 
----
-
 ## Version 13 – March 3, 2026
 
-### Memory optimization for 32GB machines
+### Memory optimization
 
 Sites with ≤32GB RAM hit an OOM error during the vitals pivot in `01_cohort_identification.py`. Three changes reduce peak memory usage — **no logic or output changes**.
 
@@ -146,5 +144,26 @@ Sites with ≤32GB RAM hit an OOM error during the vitals pivot in `01_cohort_id
 2. **Consolidated med pivot** — replaced 4 separate `pivot_table` calls (min/max/first/last) + a 4-way merge with a single `pivot_table` over all 4 value columns. Produces identical column names (`min_norepinephrine`, `max_norepinephrine`, etc.).
 
 3. **Explicit memory cleanup** — added `del` + `gc.collect()` calls after large intermediates (`_vitals_stitched`, `_vitals_min_max`, `_dose_agg`, `_ne_df`) are no longer needed.
+
+
+## Version 14 – March 13, 2026
+
+### DuckDB migration for memory + speed
+
+Sites with limited RAM (Windows, ≤32GB) were OOM-ing during heavy pandas operations. Migrated three bottleneck operations from pandas to DuckDB SQL, with a generic batching wrapper for memory safety.
+
+1. **Vitals pivot** — replaced chunked pandas `groupby → pivot_table → concat → flatten → rename` (40 lines) with a single DuckDB conditional aggregation query. 
+
+2. **Hourly scaffold generation** — replaced `groupby().apply(pd.date_range)` (Python loop per block) with DuckDB `generate_series() + UNNEST`. 
+
+3. **Hourly vent aggregation** — replaced pandas `groupby().agg()` with DuckDB SQL aggregation. 
+
+4. **Meds pivot** — replaced pandas `groupby + pivot_table` with DuckDB conditional aggregation. Uses `ARG_MIN`/`ARG_MAX` with `admin_dttm` for deterministic first/last dose ordering (previously depended on arbitrary row order).
+
+5. **Batching wrapper** (`pyCLIF.run_duckdb_batched`) — generic utility that splits DataFrames by `encounter_block` and processes in configurable batches. Batch size set via `config.json` key `duckdb_batch_size` (default 500). Only activates for datasets >10M rows.
+
+6. Removed unused module-level `duckdb.connect()` in `pyCLIF.py`.
+
+**Output changes**: `ne_calc_first`/`ne_calc_last` now use timestamp-ordered first/last (via `ARG_MIN`/`ARG_MAX` on `admin_dttm`) instead of arbitrary row-order first/last. Min/max values are identical.
 
 ---

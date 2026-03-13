@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Union
 from functools import reduce
 
-conn = duckdb.connect(database=':memory:')
+# module-level duckdb is imported above; connections are created per-operation
 
 project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -155,6 +155,214 @@ def convert_datetime_columns_to_site_tz(df, site_tz_str, verbose=True):
                 print(f"WARNING: {col}: Not a datetime column. Please check ETL and run again!")
     return df
 
+
+
+def run_duckdb_batched(df, query_fn, *, batch_col='encounter_block',
+                       batch_size=None, min_rows_to_batch=10_000_000,
+                       register_as='src'):
+    """
+    Run a DuckDB query in batches to limit peak memory.
+
+    Parameters:
+        df: Input DataFrame.
+        query_fn: Callable(con, table_name) -> SQL string.
+        batch_col: Column to batch on (unique values split into chunks).
+        batch_size: Blocks per batch. Defaults to config 'duckdb_batch_size' or 500.
+        min_rows_to_batch: Only batch if df has more rows than this (default 10M).
+                           Set to 0 to always batch.
+        register_as: Name to register the DataFrame as in DuckDB.
+
+    Returns:
+        pd.DataFrame: Concatenated results from all batches.
+    """
+    if batch_size is None:
+        batch_size = helper.get('duckdb_batch_size', 500)
+
+    blocks = df[batch_col].unique()
+
+    # Skip batching for small data or when blocks fit in one batch
+    if len(blocks) <= batch_size or len(df) < min_rows_to_batch:
+        con = duckdb.connect()
+        con.register(register_as, df)
+        sql = query_fn(con, register_as)
+        result = con.execute(sql).fetchdf()
+        con.unregister(register_as)
+        con.close()
+        return result
+
+    # Batch processing
+    chunks = [blocks[i:i + batch_size] for i in range(0, len(blocks), batch_size)]
+    parts = []
+    for chunk in chunks:
+        batch_df = df[df[batch_col].isin(chunk)]
+        con = duckdb.connect()
+        con.register(register_as, batch_df)
+        sql = query_fn(con, register_as)
+        parts.append(con.execute(sql).fetchdf())
+        con.unregister(register_as)
+        con.close()
+
+    return pd.concat(parts, ignore_index=True)
+
+
+def pivot_vitals_duckdb(df):
+    """
+    Pivot long-format vitals to wide using DuckDB with batching.
+
+    Parameters:
+        df (pd.DataFrame): Long-format vitals with columns:
+            encounter_block, recorded_date, recorded_hour, vital_category, vital_value
+
+    Returns:
+        pd.DataFrame: Wide-format with columns like min_heart_rate, max_heart_rate, avg_heart_rate, etc.
+    """
+    # Discover categories from full dataset first
+    con = duckdb.connect()
+    con.register('_cat_scan', df)
+    categories = [row[0] for row in
+                  con.execute("SELECT DISTINCT vital_category FROM _cat_scan ORDER BY vital_category").fetchall()]
+    con.unregister('_cat_scan')
+    con.close()
+
+    agg_parts = []
+    for cat in categories:
+        agg_parts.append(f"MIN(CASE WHEN vital_category = '{cat}' THEN vital_value END) AS min_{cat}")
+        agg_parts.append(f"MAX(CASE WHEN vital_category = '{cat}' THEN vital_value END) AS max_{cat}")
+        agg_parts.append(f"AVG(CASE WHEN vital_category = '{cat}' THEN vital_value END) AS avg_{cat}")
+
+    def _query(con, tbl):
+        return f"""
+            SELECT encounter_block, recorded_date, recorded_hour,
+                   {', '.join(agg_parts)}
+            FROM {tbl}
+            GROUP BY encounter_block, recorded_date, recorded_hour
+            ORDER BY encounter_block, recorded_date, recorded_hour
+        """
+
+    return run_duckdb_batched(df, _query)
+
+
+def generate_hourly_scaffold_duckdb(final_blocks,
+                                     start_col='block_vent_start_dttm',
+                                     end_col='block_last_vital_dttm',
+                                     block_col='encounter_block'):
+    """
+    Generate an hourly scaffold (one row per block per hour) using DuckDB generate_series.
+
+    Parameters:
+        final_blocks: DataFrame with one row per encounter_block, containing start/end timestamps.
+        start_col: Column name for scaffold start time.
+        end_col: Column name for scaffold end time.
+        block_col: Column name for block identifier.
+
+    Returns:
+        pd.DataFrame: Columns [encounter_block, recorded_date, recorded_hour].
+    """
+    con = duckdb.connect()
+    con.register('blocks_tbl', final_blocks)
+
+    query = f"""
+        SELECT
+            b.{block_col} AS encounter_block,
+            CAST(DATE_TRUNC('day', ts) AS DATE) AS recorded_date,
+            CAST(EXTRACT(HOUR FROM ts) AS INTEGER) AS recorded_hour
+        FROM blocks_tbl b,
+             LATERAL UNNEST(
+                 generate_series(b.{start_col}, b.{end_col}, INTERVAL '1 HOUR')
+             ) AS t(ts)
+        GROUP BY b.{block_col}, recorded_date, recorded_hour
+        ORDER BY b.{block_col}, recorded_date, recorded_hour
+    """
+
+    result = con.execute(query).fetchdf()
+    con.unregister('blocks_tbl')
+    con.close()
+
+    # Convert recorded_date to tz-naive datetime to match pandas convention
+    result['recorded_date'] = pd.to_datetime(result['recorded_date']).dt.tz_localize(None)
+
+    return result
+
+
+def aggregate_hourly_vent_duckdb(df):
+    """
+    Aggregate respiratory support data to hourly min/max using DuckDB with batching.
+
+    Parameters:
+        df: DataFrame with columns: encounter_block, recorded_date, recorded_hour,
+            fio2_set, peep_set, lpm_set, resp_rate_obs, tracheostomy_filled, on_vent.
+
+    Returns:
+        pd.DataFrame: Hourly aggregated vent data.
+    """
+    def _query(con, tbl):
+        return f"""
+            SELECT encounter_block, recorded_date, recorded_hour,
+                   MIN(fio2_set) AS min_fio2_set,
+                   MAX(fio2_set) AS max_fio2_set,
+                   MIN(peep_set) AS min_peep_set,
+                   MAX(peep_set) AS max_peep_set,
+                   MIN(lpm_set) AS min_lpm_set,
+                   MAX(lpm_set) AS max_lpm_set,
+                   MIN(resp_rate_obs) AS min_resp_rate_obs,
+                   MAX(resp_rate_obs) AS max_resp_rate_obs,
+                   MAX(tracheostomy_filled) AS hourly_trach,
+                   MAX(on_vent) AS hourly_on_vent
+            FROM {tbl}
+            GROUP BY encounter_block, recorded_date, recorded_hour
+            ORDER BY encounter_block, recorded_date, recorded_hour
+        """
+
+    return run_duckdb_batched(df, _query)
+
+
+def pivot_meds_duckdb(df, dose_col='med_dose_converted', category_col='med_category',
+                      order_col='recorded_dttm'):
+    """
+    Pivot long-format meds to wide using DuckDB with batching.
+
+    Parameters:
+        df: DataFrame with columns including encounter_block, recorded_date, recorded_hour,
+            med_category, med_dose_converted, and an ordering column (recorded_dttm).
+        dose_col: Column containing dose values.
+        category_col: Column containing med category names.
+        order_col: Column to determine first/last ordering within each hour.
+
+    Returns:
+        pd.DataFrame: Wide-format with columns like min_norepinephrine, max_norepinephrine,
+                       first_norepinephrine, last_norepinephrine, etc.
+    """
+    # Discover categories from full dataset
+    con = duckdb.connect()
+    con.register('_cat_scan', df)
+    categories = [row[0] for row in
+                  con.execute(f"SELECT DISTINCT {category_col} FROM _cat_scan ORDER BY {category_col}").fetchall()]
+    con.unregister('_cat_scan')
+    con.close()
+
+    agg_parts = []
+    for cat in categories:
+        agg_parts.append(
+            f"MIN(CASE WHEN {category_col} = '{cat}' THEN {dose_col} END) AS min_{cat}")
+        agg_parts.append(
+            f"MAX(CASE WHEN {category_col} = '{cat}' THEN {dose_col} END) AS max_{cat}")
+        agg_parts.append(
+            f"ARG_MIN(CASE WHEN {category_col} = '{cat}' THEN {dose_col} END, "
+            f"CASE WHEN {category_col} = '{cat}' THEN {order_col} END) AS first_{cat}")
+        agg_parts.append(
+            f"ARG_MAX(CASE WHEN {category_col} = '{cat}' THEN {dose_col} END, "
+            f"CASE WHEN {category_col} = '{cat}' THEN {order_col} END) AS last_{cat}")
+
+    def _query(con, tbl):
+        return f"""
+            SELECT encounter_block, recorded_date, recorded_hour,
+                   {', '.join(agg_parts)}
+            FROM {tbl}
+            GROUP BY encounter_block, recorded_date, recorded_hour
+            ORDER BY encounter_block, recorded_date, recorded_hour
+        """
+
+    return run_duckdb_batched(df, _query)
 
 
 def count_unique_encounters(df, encounter_column='hospitalization_id'):
@@ -756,7 +964,7 @@ def build_meds_hourly_scaffold(
            .reset_index(drop=True))
 
     # ── 4 · derive date/hour & drop duplicate local hours ---------------
-    out["recorded_date"] = out["local_ts"].dt.date
+    out["recorded_date"] = out["local_ts"].dt.normalize().dt.tz_localize(None)
     out["recorded_hour"] = out["local_ts"].dt.hour
 
     out = out.drop_duplicates([id_col, "recorded_date", "recorded_hour"],
@@ -873,7 +1081,7 @@ def extend_hourly_dataset(base_df, addon_df, merge_cols):
         for dt in gap_range:
             gap_rows.append({
                 'encounter_block': enc_id,
-                'recorded_date': dt.date(),
+                'recorded_date': dt.normalize().replace(tzinfo=None),
                 'recorded_hour': dt.hour,
                 'recorded_dttm': dt
             })

@@ -630,35 +630,15 @@ def step_e_scaffold(
     else:
         log("There are no bad blocks! Good job CLIF-ing")
 
-    # 4) Generate the hourly sequence at block level
-    def _generate_hourly_sequence_block(_group):
-        _blk = _group.name
-        _start_time = _group['block_vent_start_dttm'].iloc[0]
-        _end_time = _group['block_last_vital_dttm'].iloc[0]
-        _hourly_timestamps = pd.date_range(start=_start_time, end=_end_time, freq='h')
-        return pd.DataFrame({
-            'encounter_block': _blk,
-            'recorded_dttm': _hourly_timestamps
-        })
-
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore", DeprecationWarning)
-        _hourly_seq_block = (
-            final_blocks
-            .groupby('encounter_block')
-            .apply(_generate_hourly_sequence_block)
-            .reset_index(drop=True)
-        )
-    _hourly_seq_block = _hourly_seq_block.reset_index(drop=True)
-
-    _hourly_seq_block['recorded_date'] = _hourly_seq_block['recorded_dttm'].dt.date
-    _hourly_seq_block['recorded_hour'] = _hourly_seq_block['recorded_dttm'].dt.hour
-    _hourly_seq_block = _hourly_seq_block.drop(columns=['recorded_dttm'])
-    _hourly_seq_block = _hourly_seq_block.drop_duplicates(subset=['encounter_block', 'recorded_date', 'recorded_hour'])
+    # 4) Generate the hourly sequence at block level (DuckDB generate_series)
+    import time as _time
+    _t0 = _time.perf_counter()
+    _hourly_seq_block = pyCLIF.generate_hourly_scaffold_duckdb(final_blocks)
+    log(f"DuckDB hourly scaffold completed in {_time.perf_counter() - _t0:.1f}s")
 
     # 6) Combine with actual vent usage by hour
     _resp_stitched_final_local = resp_stitched_final[resp_stitched_final['encounter_block'].isin(all_ids_vent['encounter_block'])].copy()
-    _resp_stitched_final_local['recorded_date'] = _resp_stitched_final_local['recorded_dttm'].dt.date
+    _resp_stitched_final_local['recorded_date'] = _resp_stitched_final_local['recorded_dttm'].dt.normalize().dt.tz_localize(None)
     _resp_stitched_final_local['recorded_hour'] = _resp_stitched_final_local['recorded_dttm'].dt.hour
 
     # Forward fill tracheostomy within each encounter_block BEFORE hourly aggregation
@@ -675,18 +655,9 @@ def step_e_scaffold(
     log(f"Blocks with trach (before forward fill): {_before_blocks}")
     log(f"Blocks with trach (after forward fill): {_after_blocks}")
 
-    _hourly_vent_block = _resp_stitched_final_local.groupby(['encounter_block', 'recorded_date', 'recorded_hour']).agg(
-        min_fio2_set=('fio2_set', 'min'),
-        max_fio2_set=('fio2_set', 'max'),
-        min_peep_set=('peep_set', 'min'),
-        max_peep_set=('peep_set', 'max'),
-        min_lpm_set=('lpm_set', 'min'),
-        max_lpm_set=('lpm_set', 'max'),
-        min_resp_rate_obs=('resp_rate_obs', 'min'),
-        max_resp_rate_obs=('resp_rate_obs', 'max'),
-        hourly_trach=('tracheostomy_filled', 'max'),
-        hourly_on_vent=('on_vent', 'max'),
-    ).reset_index()
+    _t0 = _time.perf_counter()
+    _hourly_vent_block = pyCLIF.aggregate_hourly_vent_duckdb(_resp_stitched_final_local)
+    log(f"DuckDB hourly vent aggregation completed in {_time.perf_counter() - _t0:.1f}s")
 
     # Sanity check
     _seq_blocks = set(_hourly_seq_block['encounter_block'].unique())
@@ -734,7 +705,7 @@ def step_e_scaffold(
         for _dt in _gap_times:
             _gap_rows.append({
                 'encounter_block': _enc_id,
-                'recorded_date': _dt.date(),
+                'recorded_date': _dt.normalize().replace(tzinfo=None),
                 'recorded_hour': _dt.hour,
                 'recorded_dttm': _dt
             })
@@ -1045,7 +1016,7 @@ def vitals_merge(
     _vitals_stitched = vitals_cohort.merge(
         all_ids_vent[['hospitalization_id', 'encounter_block']], on='hospitalization_id', how='inner'
     )
-    _vitals_stitched['recorded_date'] = _vitals_stitched['recorded_dttm'].dt.date
+    _vitals_stitched['recorded_date'] = _vitals_stitched['recorded_dttm'].dt.normalize().dt.tz_localize(None)
     _vitals_stitched['recorded_hour'] = _vitals_stitched['recorded_dttm'].dt.hour
     log(f"Number of unique encounter blocks BEFORE filtering vitals: {_vitals_stitched['encounter_block'].nunique()}")
     _vitals_stitched = _vitals_stitched[_vitals_stitched['encounter_block'].isin(all_ids_w_outcome['encounter_block'])]
@@ -1063,64 +1034,36 @@ def vitals_merge(
             columns='vital_category',
             values='vital_value'
         ).reset_index()
+        del _sbp_dbp; gc.collect()
         _sbp_dbp_pivot = _sbp_dbp_pivot.dropna(subset=['sbp', 'dbp'])
         _sbp_dbp_pivot['map'] = (_sbp_dbp_pivot['sbp'] + 2 * _sbp_dbp_pivot['dbp']) / 3
 
         _map_vitals = _sbp_dbp_pivot[['encounter_block', 'recorded_dttm', 'map']].copy()
+        del _sbp_dbp_pivot; gc.collect()
         _map_vitals['vital_category'] = 'map'
         _map_vitals['vital_value'] = _map_vitals['map']
-        _map_vitals['recorded_date'] = _map_vitals['recorded_dttm'].dt.date
+        _map_vitals.drop(columns='map', inplace=True)
+        _map_vitals['recorded_date'] = _map_vitals['recorded_dttm'].dt.normalize().dt.tz_localize(None)
         _map_vitals['recorded_hour'] = _map_vitals['recorded_dttm'].dt.hour
-        _map_vitals = _map_vitals[[
-            'encounter_block', 'recorded_dttm', 'recorded_date', 'recorded_hour', 'vital_category', 'vital_value'
-        ]]
+        _map_vitals.drop(columns='recorded_dttm', inplace=True)
+        _vitals_stitched.drop(columns='recorded_dttm', inplace=True)
         _vitals_stitched = pd.concat([_vitals_stitched, _map_vitals], ignore_index=True)
+        del _map_vitals; gc.collect()
         log("...map was calculated and appended to vitals_stitched.")
     else:
         log("Map exists in your CLIF database")
+        _vitals_stitched.drop(columns='recorded_dttm', inplace=True)
 
-    # Compute min/max vitals at the BLOCK level
-    _vitals_min_max = _vitals_stitched.groupby(
-        ['encounter_block', 'recorded_date', 'recorded_hour', 'vital_category']
-    ).agg(
-        min_val=('vital_value', 'min'),
-        max_val=('vital_value', 'max'),
-        avg_val=('vital_value', 'mean')
-    ).reset_index()
+    # Keep only columns needed for the pivot to reduce memory
+    _vitals_stitched = _vitals_stitched[['encounter_block', 'recorded_date', 'recorded_hour', 'vital_category', 'vital_value']]
+
+    # DuckDB pivot: groupby + pivot in a single SQL pass — no chunking, no MultiIndex
+    import time as _time
+    _t0 = _time.perf_counter()
+    _vitals_pivot = pyCLIF.pivot_vitals_duckdb(_vitals_stitched)
+    _dt = _time.perf_counter() - _t0
     del _vitals_stitched; gc.collect()
-
-    # Chunked pivot to avoid OOM on 32GB machines
-    _CHUNK = 500  # encounter_blocks per batch
-    _blocks = _vitals_min_max['encounter_block'].unique()
-    _chunks = [_blocks[i:i + _CHUNK] for i in range(0, len(_blocks), _CHUNK)]
-    _pivot_parts = []
-    for _blk_chunk in _chunks:
-        _part = _vitals_min_max[_vitals_min_max['encounter_block'].isin(_blk_chunk)]
-        _pivot_parts.append(
-            _part.pivot_table(
-                index=['encounter_block', 'recorded_date', 'recorded_hour'],
-                columns='vital_category',
-                values=['min_val', 'max_val', 'avg_val']
-            ).reset_index()
-        )
-    _vitals_pivot = pd.concat(_pivot_parts, ignore_index=True)
-    del _vitals_min_max, _pivot_parts; gc.collect()
-
-    _vitals_pivot.columns = [
-        '_'.join(col).rstrip('_') if isinstance(col, tuple) else col
-        for col in _vitals_pivot.columns
-    ]
-
-    _rename_dict = {}
-    for _c in _vitals_pivot.columns:
-        if _c.startswith('min_val_'):
-            _rename_dict[_c] = _c.replace('min_val_', 'min_')
-        elif _c.startswith('max_val_'):
-            _rename_dict[_c] = _c.replace('max_val_', 'max_')
-        elif _c.startswith('avg_val_'):
-            _rename_dict[_c] = _c.replace('avg_val_', 'avg_')
-
-    _vitals_pivot = _vitals_pivot.rename(columns=_rename_dict)
+    log(f"DuckDB vitals pivot completed in {_dt:.1f}s")
 
     log("Finished creating block-level min/max/avg vitals pivot:")
     log(_vitals_pivot.columns.tolist())
@@ -1188,7 +1131,7 @@ def meds_merge(
     _meds['med_dose_unit'] = _meds['med_dose_unit'].str.lower()
     _meds = pyCLIF.convert_datetime_columns_to_site_tz(_meds, pyCLIF.helper['timezone'])
     _meds['med_dose'] = pd.to_numeric(_meds['med_dose'], errors='coerce')
-    _meds['recorded_date'] = _meds['admin_dttm'].dt.date
+    _meds['recorded_date'] = _meds['admin_dttm'].dt.normalize().dt.tz_localize(None)
     _meds['recorded_hour'] = _meds['admin_dttm'].dt.hour
 
     # Create summary tables
@@ -1280,20 +1223,11 @@ def meds_merge(
         else:
             log(f"{_med} is in the dataset.")
 
-    # Pivot and Aggregate
-    _group_cols = ['encounter_block', 'recorded_date', 'recorded_hour', 'med_category']
-    _dose_agg = _ne_df.groupby(_group_cols)['med_dose_converted'].agg(['min', 'max', 'first', 'last']).reset_index()
-
-    _dose_pivot = _dose_agg.pivot_table(
-        index=['encounter_block', 'recorded_date', 'recorded_hour'],
-        columns='med_category',
-        values=['min', 'max', 'first', 'last']
-    ).reset_index()
-    _dose_pivot.columns = [
-        '_'.join(col).rstrip('_') if isinstance(col, tuple) else col
-        for col in _dose_pivot.columns
-    ]
-    del _dose_agg; gc.collect()
+    # Pivot and Aggregate (DuckDB: groupby + conditional agg in one pass)
+    import time as _time
+    _t0 = _time.perf_counter()
+    _dose_pivot = pyCLIF.pivot_meds_duckdb(_ne_df, order_col='admin_dttm')
+    log(f"DuckDB meds pivot completed in {_time.perf_counter() - _t0:.1f}s")
 
     _dose_pivot.fillna(0, inplace=True)
 
@@ -1356,6 +1290,8 @@ def meds_merge(
     )
     del _ne_df; gc.collect()
 
+    # Coerce scaffold's recorded_date from object to datetime64 to match pivot
+    _hourly_ne['recorded_date'] = pd.to_datetime(_hourly_ne['recorded_date'])
     _ne_calc_df = _ne_calc_df.sort_values(by=['encounter_block', 'recorded_date', 'recorded_hour'])
     _hourly_ne_merged = pd.merge(
         _hourly_ne,
@@ -1538,7 +1474,7 @@ def labs_merge(
     _labs = pyCLIF.convert_datetime_columns_to_site_tz(_labs, pyCLIF.helper['timezone'])
     _labs['lab_value_numeric'] = pd.to_numeric(_labs['lab_value_numeric'], errors='coerce')
     _labs['recorded_hour'] = _labs['lab_result_dttm'].dt.hour
-    _labs['recorded_date'] = _labs['lab_result_dttm'].dt.date
+    _labs['recorded_date'] = _labs['lab_result_dttm'].dt.normalize().dt.tz_localize(None)
 
     _lactate_df = pd.merge(_labs, block_vent_times, on='encounter_block', how='left')
     _lactate_df['time_since_vent_start_hours'] = (
