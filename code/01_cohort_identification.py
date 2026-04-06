@@ -42,7 +42,13 @@ def imports():
     import sofa_score
     from clifpy.tables.respiratory_support import RespiratorySupport
     import marimo as mo
+
+    # Year-chunked mode: set COHORT_YEAR env var to process one admission year at a time (OOM fix)
+    _cohort_year_str = os.environ.get('COHORT_YEAR', '').strip()
+    COHORT_YEAR = int(_cohort_year_str) if _cohort_year_str else None
+
     return (
+        COHORT_YEAR,
         FancyArrowPatch,
         Rectangle,
         RespiratorySupport,
@@ -102,56 +108,70 @@ def config(json, os, pyCLIF):
 
 
 @app.cell
-def output_folders(os, pyCLIF, shutil):
+def output_folders(COHORT_YEAR, os, pyCLIF, shutil):
     # NOTE: Uses print() not log() — logger is created AFTER this cell
     # to ensure the log file points to the fresh output directory.
     print("=== Output Folder Management ===")
 
-    output_folder = f'{pyCLIF.project_root}/output'
-    _output_old_folder = f'{pyCLIF.project_root}/output_old'
+    _base_output = f'{pyCLIF.project_root}/output'
 
-    # Check if output folder exists
-    if os.path.exists(output_folder):
-        print(f"Existing output folder found: {output_folder}")
+    if COHORT_YEAR is not None:
+        # ── Yearly mode: save to output/yearly/{year}/, no backup ──
+        print(f"COHORT_YEAR={COHORT_YEAR}: yearly chunked mode")
+        output_folder = f'{_base_output}/yearly/{COHORT_YEAR}'
+        os.makedirs(f'{output_folder}/final/graphs', exist_ok=True)
+        os.makedirs(f'{output_folder}/intermediate', exist_ok=True)
+        # Also ensure base output dirs exist for non-critical saves (summaries, sofa)
+        os.makedirs(f'{_base_output}/final/graphs', exist_ok=True)
+        os.makedirs(f'{_base_output}/intermediate', exist_ok=True)
+        print(f"Yearly output directory: {output_folder}/")
+    else:
+        # ── Standard mode: backup and recreate (existing behavior) ──
+        output_folder = _base_output
+        _output_old_folder = f'{pyCLIF.project_root}/output_old'
 
-        # If output_old already exists, remove it first
-        if os.path.exists(_output_old_folder):
-            print(f"Removing existing output_old folder...")
-            shutil.rmtree(_output_old_folder)
+        # Check if output folder exists
+        if os.path.exists(output_folder):
+            print(f"Existing output folder found: {output_folder}")
 
-        # Rename current output to output_old
-        print(f"Renaming {output_folder} -> {_output_old_folder}")
-        os.rename(output_folder, _output_old_folder)
+            # If output_old already exists, remove it first
+            if os.path.exists(_output_old_folder):
+                print(f"Removing existing output_old folder...")
+                shutil.rmtree(_output_old_folder)
 
-        # Log what was backed up
-        if os.path.exists(_output_old_folder):
-            _backup_size = sum(
-                os.path.getsize(os.path.join(_dirpath, _filename))
-                for _dirpath, _dirnames, _filenames in os.walk(_output_old_folder)
-                for _filename in _filenames
-            ) / (1024 * 1024)
-            print(f"Backup created: {_backup_size:.1f} MB")
+            # Rename current output to output_old
+            print(f"Renaming {output_folder} -> {_output_old_folder}")
+            os.rename(output_folder, _output_old_folder)
 
-    # Create fresh output directory structure
-    print(f"Creating fresh output directory structure...")
-    os.makedirs(output_folder, exist_ok=True)
-    os.makedirs(f'{output_folder}/final', exist_ok=True)
-    os.makedirs(f'{output_folder}/intermediate', exist_ok=True)
-    # Create empty output files
-    with open(f'{output_folder}/final/final_output.txt', 'w') as _f:
-        pass
-    with open(f'{output_folder}/intermediate/intermediate.txt', 'w') as _f:
-        pass
+            # Log what was backed up
+            if os.path.exists(_output_old_folder):
+                _backup_size = sum(
+                    os.path.getsize(os.path.join(_dirpath, _filename))
+                    for _dirpath, _dirnames, _filenames in os.walk(_output_old_folder)
+                    for _filename in _filenames
+                ) / (1024 * 1024)
+                print(f"Backup created: {_backup_size:.1f} MB")
 
-    # Create graphs subfolder
-    graphs_folder = f'{output_folder}/final/graphs'
-    os.makedirs(graphs_folder, exist_ok=True)
+        # Create fresh output directory structure
+        print(f"Creating fresh output directory structure...")
+        os.makedirs(output_folder, exist_ok=True)
+        os.makedirs(f'{output_folder}/final', exist_ok=True)
+        os.makedirs(f'{output_folder}/intermediate', exist_ok=True)
+        # Create empty output files
+        with open(f'{output_folder}/final/final_output.txt', 'w') as _f:
+            pass
+        with open(f'{output_folder}/intermediate/intermediate.txt', 'w') as _f:
+            pass
 
-    print(f"Output directory structure ready:")
-    print(f"   {output_folder}/")
-    print(f"   +-- final/")
-    print(f"   |   +-- graphs/")
-    print(f"   +-- intermediate/")
+        # Create graphs subfolder
+        graphs_folder = f'{output_folder}/final/graphs'
+        os.makedirs(graphs_folder, exist_ok=True)
+
+        print(f"Output directory structure ready:")
+        print(f"   {output_folder}/")
+        print(f"   +-- final/")
+        print(f"   |   +-- graphs/")
+        print(f"   +-- intermediate/")
     return (output_folder,)
 
 
@@ -261,7 +281,7 @@ def _(mo):
 
 
 @app.cell
-def steps_a_b(adt, hospitalization, log, pyCLIF):
+def steps_a_b(COHORT_YEAR, adt, hospitalization, log, pd, pyCLIF):
     # ── STEP A: Date and Age Filter ──
     log("\n=== STEP A: Filter by date range & age ===\n")
     _date_mask = (hospitalization['admission_dttm'] >= '2018-01-01') & \
@@ -304,6 +324,34 @@ def steps_a_b(adt, hospitalization, log, pyCLIF):
 
     # Mapping of patient id, hospitalization id and encounter blocks
     all_ids_base = _stitched_cohort[['patient_id', 'hospitalization_id', 'encounter_block', 'discharge_category', 'discharge_dttm']].drop_duplicates()
+
+    # ── Year filter (chunked mode) ──
+    # Applied AFTER stitching so cross-year encounter blocks get correct IDs.
+    # Each block is assigned to the year of its earliest admission.
+    if COHORT_YEAR is not None:
+        _block_admission = hospitalization_cohort[['hospitalization_id', 'admission_dttm']].merge(
+            all_ids_base[['hospitalization_id', 'encounter_block']], on='hospitalization_id'
+        ).groupby('encounter_block')['admission_dttm'].min().reset_index()
+        _year_blocks = _block_admission[
+            _block_admission['admission_dttm'].dt.year == COHORT_YEAR
+        ]['encounter_block'].unique()
+        _n_before = all_ids_base['encounter_block'].nunique()
+        all_ids_base = all_ids_base[all_ids_base['encounter_block'].isin(_year_blocks)].copy()
+        _n_after = all_ids_base['encounter_block'].nunique()
+        log(f"\nCOHORT_YEAR={COHORT_YEAR}: filtered {_n_before} -> {_n_after} encounter blocks")
+
+        # Recompute STROBE A_ metrics for this year so summing across years gives correct totals
+        _year_hosps = hospitalization_cohort[
+            hospitalization_cohort['admission_dttm'].dt.year == COHORT_YEAR
+        ]
+        _strobe_ab['A_after_date_age_filter'] = _year_hosps['hospitalization_id'].nunique()
+        _strobe_ab['A_after_age_filter'] = _year_hosps['hospitalization_id'].nunique()
+        # Recompute B_ metrics for the year's blocks
+        _year_hosp_ids = all_ids_base['hospitalization_id'].unique()
+        _strobe_ab['B_before_stitching'] = len(_year_hosp_ids)
+        _strobe_ab['B_after_stitching'] = _n_after
+        _strobe_ab['B_stitched_hosp_ids'] = _strobe_ab['B_before_stitching'] - _strobe_ab['B_after_stitching']
+
     log("\nUnique values in each column:")
     for _col in all_ids_base.columns[:3]:
         log(f"\n{_col}:")
@@ -1596,6 +1644,7 @@ def write_outputs(
     final_df,
     final_df_blocks,
     log,
+    output_folder,
     pd,
     pyCLIF,
     strobe_ab,
@@ -1607,9 +1656,9 @@ def write_outputs(
     strobe_meds,
     strobe_vitals,
 ):
-    final_df.to_parquet(f'{pyCLIF.project_root}/output/intermediate/final_df_hourly.parquet')
-    final_df_blocks.to_parquet(f'{pyCLIF.project_root}/output/intermediate/final_df_blocks.parquet')
-    all_ids_w_outcome.to_parquet(f'{pyCLIF.project_root}/output/intermediate/cohort_all_ids_w_outcome.parquet')
+    final_df.to_parquet(f'{output_folder}/intermediate/final_df_hourly.parquet')
+    final_df_blocks.to_parquet(f'{output_folder}/intermediate/final_df_blocks.parquet')
+    all_ids_w_outcome.to_parquet(f'{output_folder}/intermediate/cohort_all_ids_w_outcome.parquet')
 
     # Merge all strobe dicts
     strobe_counts = {}
@@ -1623,7 +1672,7 @@ def write_outputs(
     strobe_counts.update(strobe_labs)
 
     pd.DataFrame(list(strobe_counts.items()), columns=['Metric', 'Value']).to_csv(
-        f'{pyCLIF.project_root}/output/final/strobe_counts.csv', index=False
+        f'{output_folder}/final/strobe_counts.csv', index=False
     )
 
     log(strobe_counts)
@@ -1638,7 +1687,7 @@ def _(mo):
 
 
 @app.cell
-def strobe_diagram(FancyArrowPatch, Rectangle, log, plt, pyCLIF, strobe_counts):
+def strobe_diagram(FancyArrowPatch, Rectangle, log, output_folder, plt, pyCLIF, strobe_counts):
     _fig, _ax = plt.subplots(figsize=(10, 10))
     _ax.axis('off')
 
@@ -1671,7 +1720,7 @@ def strobe_diagram(FancyArrowPatch, Rectangle, log, plt, pyCLIF, strobe_counts):
         _ax.text(_x, _y, _excl["text"], ha='center', va='center', fontsize=9)
 
     plt.tight_layout()
-    plt.savefig(f'{pyCLIF.project_root}/output/final/graphs/strobe_diagram_{pyCLIF.helper["site_name"]}.png')
+    plt.savefig(f'{output_folder}/final/graphs/strobe_diagram_{pyCLIF.helper["site_name"]}.png')
     plt.close(_fig)
     log("Created STROBE diagram")
     return

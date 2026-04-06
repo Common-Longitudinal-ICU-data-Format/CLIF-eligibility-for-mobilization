@@ -8,7 +8,11 @@ REM    2. Python  02_mobilization_analysis.py   (criteria, tables, sensitivity)
 REM    3. R       03_combined_analysis.R               (CIF, Fine-Gray, forest plots)
 REM    4. R       04_sensitivity_forest_plots.R           (sensitivity forest plots)
 REM
-REM  Usage:  run_pipeline.bat
+REM  Usage:  run_pipeline.bat [--chunked]
+REM
+REM  Options:
+REM    --chunked   Run 01_cohort_identification.py one year at a time (2018-2024)
+REM                to reduce peak memory usage.
 REM ════════════════════════════════════════════════════════════════════════════════
 setlocal enabledelayedexpansion
 
@@ -50,13 +54,32 @@ set "PYTHONPATH=%PROJECT_ROOT%\code;%PYTHONPATH%"
 
 set FAILED_COUNT=0
 set STEP=0
-set TOTAL=4
+
+REM ── parse --chunked flag ────────────────────────────────────────────────────
+set "CHUNKED=0"
+for %%a in (%*) do if "%%a"=="--chunked" set "CHUNKED=1"
+
+if "!CHUNKED!"=="1" (
+    set TOTAL=11
+    call :log "Running in chunked mode (one year at a time)"
+) else (
+    set TOTAL=4
+)
 
 REM ── pipeline ─────────────────────────────────────────────────────────────────
 cd /d "%PROJECT_ROOT%\code"
 
 REM Step 1: Cohort Identification
-call :run_step "01 Cohort Identification" uv run --project "%PROJECT_ROOT%" python 01_cohort_identification.py
+if "!CHUNKED!"=="1" (
+    for %%Y in (2018 2019 2020 2021 2022 2023 2024) do (
+        set "COHORT_YEAR=%%Y"
+        call :run_step "01 Cohort (%%Y)" uv run --project "%PROJECT_ROOT%" python 01_cohort_identification.py
+    )
+    set "COHORT_YEAR="
+    call :run_step "01b Aggregate Yearly" uv run --project "%PROJECT_ROOT%" python 01b_aggregate_yearly.py
+) else (
+    call :run_step "01 Cohort Identification" uv run --project "%PROJECT_ROOT%" python 01_cohort_identification.py
+)
 
 REM Step 2: Mobilization Analysis
 call :run_step "02 Mobilization Analysis" uv run --project "%PROJECT_ROOT%" python 02_mobilization_analysis.py

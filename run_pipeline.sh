@@ -8,7 +8,12 @@
 #    3. R       03_combined_analysis.R               (CIF, Fine-Gray, forest plots)
 #    4. R       04_sensitivity_forest_plots.R           (sensitivity forest plots)
 #
-#  Usage:  bash run_pipeline.sh
+#  Usage:  bash run_pipeline.sh [--chunked]
+#
+#  Options:
+#    --chunked   Run 01_cohort_identification.py one year at a time (2018-2024)
+#                to reduce peak memory usage. Outputs are saved per-year in
+#                output/yearly/{year}/ then aggregated by 01b_aggregate_yearly.py.
 # ════════════════════════════════════════════════════════════════════════════════
 set -euo pipefail
 
@@ -47,9 +52,20 @@ export PYTHONUNBUFFERED=1
 export MPLBACKEND=Agg
 export PYTHONPATH="${PROJECT_ROOT}/code:${PYTHONPATH:-}"
 
+# ── parse flags ─────────────────────────────────────────────────────────────
+CHUNKED=0
+for arg in "$@"; do
+  case "$arg" in --chunked) CHUNKED=1 ;; esac
+done
+
 FAILED_STEPS=()
 STEP=0
-TOTAL=4  # 2 Python + 2 R
+if [ "$CHUNKED" -eq 1 ]; then
+  TOTAL=11  # 7 years + aggregation + 02 + 2 R
+  log "${YELLOW}Running in chunked mode (one year at a time)${RESET}"
+else
+  TOTAL=4  # 2 Python + 2 R
+fi
 
 run_step() {
   local name="$1"; shift
@@ -73,7 +89,15 @@ run_step() {
 cd "${PROJECT_ROOT}/code"
 
 # Python steps
-run_step "01 Cohort Identification"       uv run --project "${PROJECT_ROOT}" python 01_cohort_identification.py
+if [ "$CHUNKED" -eq 1 ]; then
+  for YEAR in 2018 2019 2020 2021 2022 2023 2024; do
+    COHORT_YEAR=$YEAR run_step "01 Cohort ($YEAR)" \
+      uv run --project "${PROJECT_ROOT}" python 01_cohort_identification.py
+  done
+  run_step "01b Aggregate Yearly"           uv run --project "${PROJECT_ROOT}" python 01b_aggregate_yearly.py
+else
+  run_step "01 Cohort Identification"       uv run --project "${PROJECT_ROOT}" python 01_cohort_identification.py
+fi
 run_step "02 Mobilization Analysis"       uv run --project "${PROJECT_ROOT}" python 02_mobilization_analysis.py
 
 # R steps
