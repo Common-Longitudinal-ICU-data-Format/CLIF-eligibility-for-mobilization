@@ -21,8 +21,7 @@ set "PROJECT_ROOT=%~dp0"
 REM Remove trailing backslash
 if "%PROJECT_ROOT:~-1%"=="\" set "PROJECT_ROOT=%PROJECT_ROOT:~0,-1%"
 
-for /f "tokens=2 delims==" %%a in ('wmic os get localdatetime /value') do set "DT=%%a"
-set "TIMESTAMP=%DT:~0,4%%DT:~4,2%%DT:~6,2%_%DT:~8,2%%DT:~10,2%%DT:~12,2%"
+for /f "tokens=*" %%a in ('powershell -noprofile -command "Get-Date -Format yyyyMMdd_HHmmss"') do set "TIMESTAMP=%%a"
 
 set "LOG_DIR=%PROJECT_ROOT%\code\logs"
 if not exist "%LOG_DIR%" mkdir "%LOG_DIR%"
